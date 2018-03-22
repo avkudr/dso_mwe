@@ -5,13 +5,13 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
 #set(CMAKE_VERBOSE_MAKEFILE ON)
 
 
-set(CMAKE_BUILD_TYPE Release)
+set(CMAKE_BUILD_TYPE Debug)
 #set(CMAKE_BUILD_TYPE Debug)
 #set(BUILD_TYPE RelWithDebInfo)
 
 set(EXECUTABLE_OUTPUT_PATH bin)
 set(LIBRARY_OUTPUT_PATH lib)
-set(DSO_DIR "${CMAKE_SOURCE_DIR}/../dso")
+set(DSO_DIR "${CMAKE_SOURCE_DIR}/../3rdparty/dso")
 set(CMAKE_MODULE_PATH ${DSO_DIR}/cmake)
 
 # required libraries
@@ -22,7 +22,7 @@ find_package(Boost COMPONENTS system thread)
 # optional libraries
 find_package(LibZip QUIET)
 find_package(Pangolin 0.2 QUIET)
-find_package(OpenCV QUIET)
+find_package(OpenCV REQUIRED)
 
 # decide if we have ziplib.
 if (LIBZIP_LIBRARY)
@@ -37,12 +37,14 @@ endif()
 # flags
 add_definitions("-DENABLE_SSE")
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(CMAKE_CXX_FLAGS
-       "${SSE_FLAGS} -O0 -g -std=c++0x -march=native"
-    )
-else()
+    message("Build type: Debug")
     set(CMAKE_CXX_FLAGS
        "${SSE_FLAGS} -O3 -g -std=c++0x -march=native"
+    )
+else()
+    message("Build type: Release")
+    set(CMAKE_CXX_FLAGS
+       "${SSE_FLAGS} -O3 -std=c++0x -march=native"
     )
 endif()
 

@@ -1,6 +1,6 @@
 /**
 * This file is part of DSO.
-* 
+*
 * Copyright 2016 Technical University of Munich and Intel.
 * Developed by Jakob Engel <engelj at in dot tum dot de>,
 * for more information see <http://vision.in.tum.de/dso>.
@@ -21,6 +21,8 @@
 * along with DSO. If not, see <http://www.gnu.org/licenses/>.
 */
 
+
+
 #include <thread>
 #include <locale.h>
 #include <signal.h>
@@ -28,8 +30,14 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include "opencv2/video/tracking.hpp"
+#include "opencv2/imgproc.hpp"
+#include "opencv2/videoio.hpp"
+#include "opencv2/highgui.hpp"
+
 #include "IOWrapper/Output3DWrapper.h"
 #include "IOWrapper/ImageDisplay.h"
+
 
 #include <boost/thread.hpp>
 #include "util/settings.h"
@@ -42,8 +50,11 @@
 #include "OptimizationBackend/MatrixAccumulators.h"
 #include "FullSystem/PixelSelector2.h"
 
+
+
 #include "IOWrapper/Pangolin/PangolinDSOViewer.h"
 #include "IOWrapper/OutputWrapper/SampleOutputWrapper.h"
+
 
 std::string vignette = "";
 std::string gammaCalib = "";
@@ -65,84 +76,91 @@ int mode=0;
 bool firstRosSpin=false;
 
 using namespace dso;
+using namespace cv;
 
+Mat camframe, gray;
 
 void my_exit_handler(int s)
 {
-	printf("Caught signal %d\n",s);
-	exit(1);
+    printf("Caught signal %d\n",s);
+    exit(1);
 }
 
 void exitThread()
 {
-	struct sigaction sigIntHandler;
-	sigIntHandler.sa_handler = my_exit_handler;
-	sigemptyset(&sigIntHandler.sa_mask);
-	sigIntHandler.sa_flags = 0;
-	sigaction(SIGINT, &sigIntHandler, NULL);
+    struct sigaction sigIntHandler;
+    sigIntHandler.sa_handler = my_exit_handler;
+    sigemptyset(&sigIntHandler.sa_mask);
+    sigIntHandler.sa_flags = 0;
+    sigaction(SIGINT, &sigIntHandler, NULL);
 
-	firstRosSpin=true;
-	while(true) pause();
+    firstRosSpin=true;
+    while(true) pause();
 }
 
 
 
-void settingsDefault(int preset = 0)
+void settingsDefault(int preset)
 {
-	printf("\n=============== PRESET Settings: ===============\n");
-	if(preset == 0 || preset == 1)
-	{
-		printf("DEFAULT settings:\n"
-				"- %s real-time enforcing\n"
-				"- 2000 active points\n"
-				"- 5-7 active frames\n"
-				"- 1-6 LM iteration each KF\n"
-				"- original image resolution\n", preset==0 ? "no " : "1x");
+    printf("\n=============== PRESET Settings: ===============\n");
+    if(preset == 0 || preset == 1)
+    {
+        printf("DEFAULT settings:\n"
+                "- %s real-time enforcing\n"
+                "- 2000 active points\n"
+                "- 5-7 active frames\n"
+                "- 1-6 LM iteration each KF\n"
+                "- original image resolution\n", preset==0 ? "no " : "1x");
 
-		playbackSpeed = (preset==0 ? 0 : 1);
-		preload = preset==1;
-		setting_desiredImmatureDensity = 1500;
-		setting_desiredPointDensity = 2000;
-		setting_minFrames = 5;
-		setting_maxFrames = 7;
-		setting_maxOptIterations=6;
-		setting_minOptIterations=1;
+        playbackSpeed = (preset==0 ? 0 : 1);
+        preload = preset==1;
+        setting_desiredImmatureDensity = 1500;
+        setting_desiredPointDensity = 2000;
+        setting_minFrames = 5;
+        setting_maxFrames = 7;
+        setting_maxOptIterations=6;
+        setting_minOptIterations=1;
 
-		setting_logStuff = false;
-	}
+        setting_logStuff = false;
+    }
 
-	if(preset == 2 || preset == 3)
-	{
-		printf("FAST settings:\n"
-				"- %s real-time enforcing\n"
-				"- 800 active points\n"
-				"- 4-6 active frames\n"
-				"- 1-4 LM iteration each KF\n"
-				"- 424 x 320 image resolution\n", preset==0 ? "no " : "5x");
+    if(preset == 2 || preset == 3)
+    {
+        printf("FAST settings:\n"
+                "- %s real-time enforcing\n"
+                "- 800 active points\n"
+                "- 4-6 active frames\n"
+                "- 1-4 LM iteration each KF\n"
+                "- 424 x 320 image resolution\n", preset==0 ? "no " : "5x");
 
-		playbackSpeed = (preset==2 ? 0 : 5);
-		preload = preset==3;
-		setting_desiredImmatureDensity = 600;
-		setting_desiredPointDensity = 800;
-		setting_minFrames = 4;
-		setting_maxFrames = 6;
-		setting_maxOptIterations=4;
-		setting_minOptIterations=1;
+        playbackSpeed = (preset==2 ? 0 : 5);
+        preload = preset==3;
+        setting_desiredImmatureDensity = 600;
+        setting_desiredPointDensity = 800;
+        setting_minFrames = 4;
+        setting_maxFrames = 6;
+        setting_maxOptIterations=4;
+        setting_minOptIterations=1;
 
-		benchmarkSetting_width = 424;
-		benchmarkSetting_height = 320;
+        benchmarkSetting_width = 424;
+        benchmarkSetting_height = 320;
 
-		setting_logStuff = false;
-	}
+        setting_logStuff = false;
+    }
 
-	printf("==============================================\n");
+    printf("==============================================\n");
 }
+
+
+
+
+
 
 void parseArgument(char* arg)
 {
-	int option;
-	float foption;
-	char buf[1000];
+    int option;
+    float foption;
+    char buf[1000];
 
 
     if(1==sscanf(arg,"sampleoutput=%d",&option))
@@ -165,238 +183,254 @@ void parseArgument(char* arg)
         return;
     }
 
-	if(1==sscanf(arg,"preset=%d",&option))
-	{
-		settingsDefault(option);
-		return;
-	}
+    if(1==sscanf(arg,"preset=%d",&option))
+    {
+        settingsDefault(option);
+        return;
+    }
 
 
-	if(1==sscanf(arg,"rec=%d",&option))
-	{
-		if(option==0)
-		{
-			disableReconfigure = true;
-			printf("DISABLE RECONFIGURE!\n");
-		}
-		return;
-	}
+    if(1==sscanf(arg,"rec=%d",&option))
+    {
+        if(option==0)
+        {
+            disableReconfigure = true;
+            printf("DISABLE RECONFIGURE!\n");
+        }
+        return;
+    }
 
 
 
-	if(1==sscanf(arg,"noros=%d",&option))
-	{
-		if(option==1)
-		{
-			disableROS = true;
-			disableReconfigure = true;
-			printf("DISABLE ROS (AND RECONFIGURE)!\n");
-		}
-		return;
-	}
+    if(1==sscanf(arg,"noros=%d",&option))
+    {
+        if(option==1)
+        {
+            disableROS = true;
+            disableReconfigure = true;
+            printf("DISABLE ROS (AND RECONFIGURE)!\n");
+        }
+        return;
+    }
 
-	if(1==sscanf(arg,"nolog=%d",&option))
-	{
-		if(option==1)
-		{
-			setting_logStuff = false;
-			printf("DISABLE LOGGING!\n");
-		}
-		return;
-	}
-	if(1==sscanf(arg,"reverse=%d",&option))
-	{
-		if(option==1)
-		{
-			reverse = true;
-			printf("REVERSE!\n");
-		}
-		return;
-	}
-	if(1==sscanf(arg,"nogui=%d",&option))
-	{
-		if(option==1)
-		{
-			disableAllDisplay = true;
-			printf("NO GUI!\n");
-		}
-		return;
-	}
-	if(1==sscanf(arg,"nomt=%d",&option))
-	{
-		if(option==1)
-		{
-			multiThreading = false;
-			printf("NO MultiThreading!\n");
-		}
-		return;
-	}
-	if(1==sscanf(arg,"prefetch=%d",&option))
-	{
-		if(option==1)
-		{
-			prefetch = true;
-			printf("PREFETCH!\n");
-		}
-		return;
-	}
-	if(1==sscanf(arg,"start=%d",&option))
-	{
-		start = option;
-		printf("START AT %d!\n",start);
-		return;
-	}
-	if(1==sscanf(arg,"end=%d",&option))
-	{
-		end = option;
-		printf("END AT %d!\n",start);
-		return;
-	}
+    if(1==sscanf(arg,"nolog=%d",&option))
+    {
+        if(option==1)
+        {
+            setting_logStuff = false;
+            printf("DISABLE LOGGING!\n");
+        }
+        return;
+    }
+    if(1==sscanf(arg,"reverse=%d",&option))
+    {
+        if(option==1)
+        {
+            reverse = true;
+            printf("REVERSE!\n");
+        }
+        return;
+    }
+    if(1==sscanf(arg,"nogui=%d",&option))
+    {
+        if(option==1)
+        {
+            disableAllDisplay = true;
+            printf("NO GUI!\n");
+        }
+        return;
+    }
+    if(1==sscanf(arg,"nomt=%d",&option))
+    {
+        if(option==1)
+        {
+            multiThreading = false;
+            printf("NO MultiThreading!\n");
+        }
+        return;
+    }
+    if(1==sscanf(arg,"prefetch=%d",&option))
+    {
+        if(option==1)
+        {
+            prefetch = true;
+            printf("PREFETCH!\n");
+        }
+        return;
+    }
+    if(1==sscanf(arg,"start=%d",&option))
+    {
+        start = option;
+        printf("START AT %d!\n",start);
+        return;
+    }
+    if(1==sscanf(arg,"end=%d",&option))
+    {
+        end = option;
+        printf("END AT %d!\n",start);
+        return;
+    }
 
-	if(1==sscanf(arg,"files=%s",buf))
-	{
-		source = buf;
-		printf("loading data from %s!\n", source.c_str());
-		return;
-	}
+    if(1==sscanf(arg,"files=%s",buf))
+    {
+        source = buf;
+        printf("loading data from %s!\n", source.c_str());
+        return;
+    }
 
-	if(1==sscanf(arg,"calib=%s",buf))
-	{
-		calib = buf;
-		printf("loading calibration from %s!\n", calib.c_str());
-		return;
-	}
+    if(1==sscanf(arg,"calib=%s",buf))
+    {
+        calib = buf;
+        printf("loading calibration from %s!\n", calib.c_str());
+        return;
+    }
 
-	if(1==sscanf(arg,"vignette=%s",buf))
-	{
-		vignette = buf;
-		printf("loading vignette from %s!\n", vignette.c_str());
-		return;
-	}
+    if(1==sscanf(arg,"vignette=%s",buf))
+    {
+        vignette = buf;
+        printf("loading vignette from %s!\n", vignette.c_str());
+        return;
+    }
 
-	if(1==sscanf(arg,"gamma=%s",buf))
-	{
-		gammaCalib = buf;
-		printf("loading gammaCalib from %s!\n", gammaCalib.c_str());
-		return;
-	}
+    if(1==sscanf(arg,"gamma=%s",buf))
+    {
+        gammaCalib = buf;
+        printf("loading gammaCalib from %s!\n", gammaCalib.c_str());
+        return;
+    }
 
-	if(1==sscanf(arg,"rescale=%f",&foption))
-	{
-		rescale = foption;
-		printf("RESCALE %f!\n", rescale);
-		return;
-	}
+    if(1==sscanf(arg,"rescale=%f",&foption))
+    {
+        rescale = foption;
+        printf("RESCALE %f!\n", rescale);
+        return;
+    }
 
-	if(1==sscanf(arg,"speed=%f",&foption))
-	{
-		playbackSpeed = foption;
-		printf("PLAYBACK SPEED %f!\n", playbackSpeed);
-		return;
-	}
+    if(1==sscanf(arg,"speed=%f",&foption))
+    {
+        playbackSpeed = foption;
+        printf("PLAYBACK SPEED %f!\n", playbackSpeed);
+        return;
+    }
 
-	if(1==sscanf(arg,"save=%d",&option))
-	{
-		if(option==1)
-		{
-			debugSaveImages = true;
-			if(42==system("rm -rf images_out")) printf("system call returned 42 - what are the odds?. This is only here to shut up the compiler.\n");
-			if(42==system("mkdir images_out")) printf("system call returned 42 - what are the odds?. This is only here to shut up the compiler.\n");
-			if(42==system("rm -rf images_out")) printf("system call returned 42 - what are the odds?. This is only here to shut up the compiler.\n");
-			if(42==system("mkdir images_out")) printf("system call returned 42 - what are the odds?. This is only here to shut up the compiler.\n");
-			printf("SAVE IMAGES!\n");
-		}
-		return;
-	}
+    if(1==sscanf(arg,"save=%d",&option))
+    {
+        if(option==1)
+        {
+            debugSaveImages = true;
+            if(42==system("rm -rf images_out")) printf("system call returned 42 - what are the odds?. This is only here to shut up the compiler.\n");
+            if(42==system("mkdir images_out")) printf("system call returned 42 - what are the odds?. This is only here to shut up the compiler.\n");
+            if(42==system("rm -rf images_out")) printf("system call returned 42 - what are the odds?. This is only here to shut up the compiler.\n");
+            if(42==system("mkdir images_out")) printf("system call returned 42 - what are the odds?. This is only here to shut up the compiler.\n");
+            printf("SAVE IMAGES!\n");
+        }
+        return;
+    }
 
-	if(1==sscanf(arg,"mode=%d",&option))
-	{
+    if(1==sscanf(arg,"mode=%d",&option))
+    {
 
-		mode = option;
-		if(option==0)
-		{
-			printf("PHOTOMETRIC MODE WITH CALIBRATION!\n");
-		}
-		if(option==1)
-		{
-			printf("PHOTOMETRIC MODE WITHOUT CALIBRATION!\n");
-			setting_photometricCalibration = 0;
-			setting_affineOptModeA = 0; //-1: fix. >=0: optimize (with prior, if > 0).
-			setting_affineOptModeB = 0; //-1: fix. >=0: optimize (with prior, if > 0).
-		}
-		if(option==2)
-		{
-			printf("PHOTOMETRIC MODE WITH PERFECT IMAGES!\n");
-			setting_photometricCalibration = 0;
-			setting_affineOptModeA = -1; //-1: fix. >=0: optimize (with prior, if > 0).
-			setting_affineOptModeB = -1; //-1: fix. >=0: optimize (with prior, if > 0).
+        mode = option;
+        if(option==0)
+        {
+            printf("PHOTOMETRIC MODE WITH CALIBRATION!\n");
+        }
+        if(option==1)
+        {
+            printf("PHOTOMETRIC MODE WITHOUT CALIBRATION!\n");
+            setting_photometricCalibration = 0;
+            setting_affineOptModeA = 0; //-1: fix. >=0: optimize (with prior, if > 0).
+            setting_affineOptModeB = 0; //-1: fix. >=0: optimize (with prior, if > 0).
+        }
+        if(option==2)
+        {
+            printf("PHOTOMETRIC MODE WITH PERFECT IMAGES!\n");
+            setting_photometricCalibration = 0;
+            setting_affineOptModeA = -1; //-1: fix. >=0: optimize (with prior, if > 0).
+            setting_affineOptModeB = -1; //-1: fix. >=0: optimize (with prior, if > 0).
             setting_minGradHistAdd=3;
-		}
-		return;
-	}
+        }
+        return;
+    }
 
-	printf("could not parse argument \"%s\"!!!!\n", arg);
+    printf("could not parse argument \"%s\"!!!!\n", arg);
 }
+
+
 
 int main( int argc, char** argv )
 {
-    //setlocale(LC_ALL, "");
+
+    VideoCapture cap(1);
+    cap.set(CAP_PROP_FRAME_WIDTH, 640); // valueX = your wanted width
+    cap.set(CAP_PROP_FRAME_HEIGHT, 480); // valueY = your wanted heigth
+    calib ="/home/akudryavtsev/Projects/dso_mwe/camera_hercules.txt";
+    //calib ="/home/akudryavtsev/Projects/dso_mwe/camera_hercules.txt";
+
+    setlocale(LC_ALL, "");
     for(int i=1; i<argc;i++)
         parseArgument(argv[i]);
 
-    //source     = "/media/andrey/WORK/Projects/dso/data/sequence_37/images.zip";
-    //source     = "/media/andrey/WORK/Projects/dso/data/tube/images.zip";
-    //calib      = "/media/andrey/WORK/Projects/dso/data/tube/camera.txt";
-    //useSampleOutput = true;
+    mode=1;
+    printf("PHOTOMETRIC MODE WITHOUT CALIBRATION!\n");
+    setting_photometricCalibration = 0;
+    setting_affineOptModeA = 0; //-1: fix. >=0: optimize (with prior, if > 0).
+    setting_affineOptModeB = 0; //-1: fix. >=0: optimize (with prior, if > 0).
 
-    //gammaCalib = "";
-    //vignette   = "";
-    //settingsDefault();
-
-    // no photometric calibration
-    //setting_photometricCalibration = 0;
-    //setting_affineOptModeA = 0; //-1: fix. >=0: optimize (with prior, if > 0).
-    //setting_affineOptModeB = 0; //-1: fix. >=0: optimize (with prior, if > 0).
-
-	// hook crtl+C.
-	boost::thread exThread = boost::thread(exitThread);
+    // hook crtl+C.
+    boost::thread exThread = boost::thread(exitThread);
 
 
-	ImageFolderReader* reader = new ImageFolderReader(source,calib, gammaCalib, vignette);
-	reader->setGlobalCalibration();
+    ImageFolderReader* reader = new ImageFolderReader(source,calib, gammaCalib, vignette);
+    reader->setGlobalCalibration();
 
-	if(setting_photometricCalibration > 0 && reader->getPhotometricGamma() == 0)
-	{
-		printf("ERROR: dont't have photometric calibation. Need to use commandline options mode=1 or mode=2 ");
-		exit(1);
-	}
+
+
+    if(setting_photometricCalibration > 0 && reader->getPhotometricGamma() == 0)
+    {
+        printf("ERROR: dont't have photometric calibation. Need to use commandline options mode=1 or mode=2 ");
+        exit(1);
+    }
 
     int lstart=start;
-	int lend = end;
-	int linc = 1;
-	if(reverse)
-	{
-		printf("REVERSE!!!!");
-		lstart=end-1;
-		if(lstart >= reader->getNumImages())
-			lstart = reader->getNumImages()-1;
-		lend = start;
-		linc = -1;
-	}
+    int lend = end;
+    int linc = 1;
+    if(reverse)
+    {
+        printf("REVERSE!!!!");
+        lstart=end-1;
+        if(lstart >= reader->getNumImages())
+            lstart = reader->getNumImages()-1;
+        lend = start;
+        linc = -1;
+    }
 
-	FullSystem* fullSystem = new FullSystem();
-	fullSystem->setGammaFunction(reader->getPhotometricGamma());
-	fullSystem->linearizeOperation = (playbackSpeed==0);
+
+
+    FullSystem* fullSystem = new FullSystem();
+    fullSystem->setGammaFunction(reader->getPhotometricGamma());
+    fullSystem->linearizeOperation = (playbackSpeed==0);
+
+
+
+
+
+
 
     IOWrap::PangolinDSOViewer* viewer = 0;
-	if(!disableAllDisplay)
+    if(!disableAllDisplay)
     {
         viewer = new IOWrap::PangolinDSOViewer(wG[0],hG[0], false);
         fullSystem->outputWrapper.push_back(viewer);
     }
 
+
+
     if(useSampleOutput)
         fullSystem->outputWrapper.push_back(new IOWrap::SampleOutputWrapper());
+
+
+
 
     // to make MacOS happy: run this in dedicated thread -- and use this one to run the GUI.
     std::thread runthread([&]() {
@@ -417,6 +451,7 @@ int main( int argc, char** argv )
             }
         }
 
+
         std::vector<ImageAndExposure*> preloadedImages;
         if(preload)
         {
@@ -433,25 +468,63 @@ int main( int argc, char** argv )
         clock_t started = clock();
         double sInitializerOffset=0;
 
-        // main loop
-        for(int ii=0;ii<(int)idsToPlay.size(); ii++)
+
+
+        for(int ii=0;ii>=0; ii++)
         {
+            printf("\n-- START OF FRAME %d \n", ii);
+
+            //run calib=bin/camera.txt mode=1
+
+
             if(!fullSystem->initialized)	// if not initialized: reset start time.
             {
                 gettimeofday(&tv_start, NULL);
                 started = clock();
-                sInitializerOffset = timesToPlayAt[ii];
+                sInitializerOffset = 0;
             }
 
-            int i = idsToPlay[ii];
+            int i = ii;
 
 
             ImageAndExposure* img;
+            cap >> camframe;
+
+            img = new ImageAndExposure(640,480,ii);
+
+            cvtColor(camframe, gray, COLOR_BGR2GRAY);
+            //imshow("iotnxt robot", gray);
+
+            for(int k=0; k<gray.rows; k++)
+                for(int j=0; j<gray.cols; j++)
+                {
+                    //img->image[(k*320)+j] = gray.at<cv::Vec3b>(k,j)[0];
+                    img->image[(k*640)+j] = gray.at<uchar>(k,j);
+                }
+
+            /*
             if(preload)
                 img = preloadedImages[ii];
-            else
+            else {
+                printf("get image.\n");
+
                 img = reader->getImage(i);
 
+
+                cap >> camframe;
+                img = new ImageAndExposure(640,480,ii);
+
+                for(int k=0; k<camframe.rows; k++)
+                    for(int j=0; j<camframe.cols; j++)
+                    {
+                        img->image[(k*640)+j] = camframe.at<cv::Vec3b>(k,j)[0];
+                    }
+
+            }
+            */
+
+
+            /*
             bool skipFrame=false;
             if(playbackSpeed!=0)
             {
@@ -467,13 +540,19 @@ int main( int argc, char** argv )
                 }
             }
 
+
+
             if(!skipFrame) fullSystem->addActiveFrame(img, i);
+
+            */
+            fullSystem->addActiveFrame(img, i);
+
 
             delete img;
 
             if(fullSystem->initFailed || setting_fullResetRequested)
             {
-                if(ii < 250 || setting_fullResetRequested)
+                if(ii < 1000 || setting_fullResetRequested)
                 {
                     printf("RESETTING!\n");
 
@@ -505,9 +584,9 @@ int main( int argc, char** argv )
         struct timeval tv_end;
         gettimeofday(&tv_end, NULL);
 
-        /*********************************************************************/
 
         fullSystem->printResult("result.txt");
+
 
         int numFramesProcessed = abs(idsToPlay[0]-idsToPlay.back());
         double numSecondsProcessed = fabs(reader->getTimestamp(idsToPlay[0])-reader->getTimestamp(idsToPlay.back()));
@@ -544,18 +623,20 @@ int main( int argc, char** argv )
 
     runthread.join();
 
-	for(IOWrap::Output3DWrapper* ow : fullSystem->outputWrapper)
-	{
-		ow->join();
-		delete ow;
-	}
+    for(IOWrap::Output3DWrapper* ow : fullSystem->outputWrapper)
+    {
+        ow->join();
+        delete ow;
+    }
 
-	printf("DELETE FULLSYSTEM!\n");
-	delete fullSystem;
 
-	printf("DELETE READER!\n");
-	delete reader;
 
-	printf("EXIT NOW!\n");
-	return 0;
+    printf("DELETE FULLSYSTEM!\n");
+    delete fullSystem;
+
+    printf("DELETE READER!\n");
+    delete reader;
+
+    printf("EXIT NOW!\n");
+    return 0;
 }
