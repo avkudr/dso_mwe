@@ -22,7 +22,14 @@ find_package(Boost COMPONENTS system thread)
 # optional libraries
 find_package(LibZip QUIET)
 find_package(Pangolin 0.2 QUIET)
-find_package(OpenCV REQUIRED)
+find_package( OpenCV QUIET )
+if(OpenCV_FOUND)
+    message("With OpenCV")
+    add_definitions(-DWITH_OPENCV)
+    include_directories(${OPENCV_INCLUDE_DIRS})
+else()
+    message("OpenCV not found")
+endif()
 
 # decide if we have ziplib.
 if (LIBZIP_LIBRARY)
@@ -62,7 +69,15 @@ include_directories(
 ) 
 
 # compile main library.
-include_directories( ${CSPARSE_INCLUDE_DIR} ${CHOLMOD_INCLUDE_DIR} ${Pangolin_INCLUDE_DIR} ${OpenCV_INCLUDE_DIR} ${LIBZIP_INCLUDE_DIR})
+include_directories(
+    ${CSPARSE_INCLUDE_DIR}
+    ${CHOLMOD_INCLUDE_DIR}
+    ${Pangolin_INCLUDE_DIR}
+    ${OpenCV_INCLUDE_DIR}
+    ${LIBZIP_INCLUDE_DIR}
+    3rdparty/
+    src/
+)
 #add_library(dso ${dso_SOURCE_FILES} ${dso_opencv_SOURCE_FILES} ${dso_pangolin_SOURCE_FILES})
 LINK_DIRECTORIES(${DSO_DIR}/build/lib)
 
@@ -75,7 +90,13 @@ else()
     set(BOOST_THREAD_LIBRARY boost_thread)
 endif()
 
+file(GLOB SOURCES
+    3rdparty/cpp-base64/base64.cpp
+    src/robot_socket_adapter.cpp
+    src/robot_socket_adapter.h
+)
+
 message("--- compiling dso_mwe")
-add_executable(dso_mwe ${PROJECT_SOURCE_DIR}/src/main.cpp )
+add_executable(dso_mwe ${SOURCES} ${PROJECT_SOURCE_DIR}/src/main.cpp)
 target_link_libraries(dso_mwe libdso.a boost_system cxsparse ${BOOST_THREAD_LIBRARY} ${LIBZIP_LIBRARY} ${Pangolin_LIBRARIES} ${OpenCV_LIBS})
 

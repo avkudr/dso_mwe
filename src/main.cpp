@@ -21,8 +21,6 @@
 * along with DSO. If not, see <http://www.gnu.org/licenses/>.
 */
 
-
-
 #include <thread>
 #include <locale.h>
 #include <signal.h>
@@ -50,11 +48,10 @@
 #include "OptimizationBackend/MatrixAccumulators.h"
 #include "FullSystem/PixelSelector2.h"
 
-
-
 #include "IOWrapper/Pangolin/PangolinDSOViewer.h"
 #include "IOWrapper/OutputWrapper/SampleOutputWrapper.h"
 
+#include "robot_socket_adapter.h"
 
 std::string vignette = "";
 std::string gammaCalib = "";
@@ -361,9 +358,12 @@ void parseArgument(char* arg)
 int main( int argc, char** argv )
 {
 
-    VideoCapture cap(1);
-    cap.set(CAP_PROP_FRAME_WIDTH, 640); // valueX = your wanted width
-    cap.set(CAP_PROP_FRAME_HEIGHT, 480); // valueY = your wanted heigth
+    RobotSocketAdapter * adapter = new RobotSocketAdapter();
+    adapter->connect();
+
+//    VideoCapture cap(1);
+//    cap.set(CAP_PROP_FRAME_WIDTH, 640); // valueX = your wanted width
+//    cap.set(CAP_PROP_FRAME_HEIGHT, 480); // valueY = your wanted heigth
     calib ="/home/akudryavtsev/Projects/dso_mwe/camera_hercules.txt";
     //calib ="/home/akudryavtsev/Projects/dso_mwe/camera_hercules.txt";
 
@@ -392,7 +392,7 @@ int main( int argc, char** argv )
         exit(1);
     }
 
-    int lstart=start;
+    int lstart = start;
     int lend = end;
     int linc = 1;
     if(reverse)
@@ -488,10 +488,9 @@ int main( int argc, char** argv )
 
 
             ImageAndExposure* img;
-            cap >> camframe;
-
             img = new ImageAndExposure(640,480,ii);
 
+            camframe = adapter->getImageOpenCV();
             cvtColor(camframe, gray, COLOR_BGR2GRAY);
             //imshow("iotnxt robot", gray);
 

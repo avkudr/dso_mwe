@@ -1,4 +1,6 @@
 build/
+logs/
+src/visa-visp/
 CMakeLists.txt.user
 CMakeCache.txt
 CMakeFiles
