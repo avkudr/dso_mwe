@@ -94,9 +94,10 @@ const bool RobotSocketAdapter::sendCmd(std::string cmd, std::vector<double> args
     strncpy(buffer, msg.c_str(), msg.size());
     ::send(sock,buffer,msg.size(),0);
 
-    char bufferResponse[1024];
-    ::recv(sock, bufferResponse, 4, 0);
+    char bufferResponse[51];
+    ::recv(sock, bufferResponse, 51, 0);
     std::string str(bufferResponse);
+    //std::cout << "response from visa" << str << std::endl;
     rtrim(str);
     if (str.compare(0,2,"OK") == 0){
         return true;
@@ -160,7 +161,7 @@ std::string RobotSocketAdapter::getImage()
                         [](char c) { return !std::isdigit(c); }),
          message.end());
 	int imageSize = std::stoi(message); //parse int
-	std::cout << "imageSize: " << imageSize << std::endl;
+	//std::cout << "imageSize: " << imageSize << std::endl;
 
 	//acquire the image
 	::recv(sock, bufferImage, imageSize+1, MSG_WAITALL);
