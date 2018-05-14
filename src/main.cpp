@@ -78,97 +78,98 @@ Mat camframe, gray;
 
 void my_exit_handler(int s)
 {
-    printf("Caught signal %d\n",s);
-    exit(1);
+	printf("Caught signal %d\n",s);
+	exit(1);
 }
 
 void exitThread()
 {
-    struct sigaction sigIntHandler;
-    sigIntHandler.sa_handler = my_exit_handler;
-    sigemptyset(&sigIntHandler.sa_mask);
-    sigIntHandler.sa_flags = 0;
-    sigaction(SIGINT, &sigIntHandler, NULL);
+	struct sigaction sigIntHandler;
+	sigIntHandler.sa_handler = my_exit_handler;
+	sigemptyset(&sigIntHandler.sa_mask);
+	sigIntHandler.sa_flags = 0;
+	sigaction(SIGINT, &sigIntHandler, NULL);
 
-    firstRosSpin=true;
-    while(true) pause();
+	firstRosSpin=true;
+	while(true) pause();
 }
 
 int main( int argc, char** argv )
 {
-	
+
 	/*************************** INIT *********************************/
-	
-    RobotSocketAdapter * adapter = new RobotSocketAdapter();
-    adapter->connect();
 
-    calib ="/home/akudryavtsev/Projects/dso_mwe/camera_hercules.txt";
+	RobotSocketAdapter * adapter = new RobotSocketAdapter();
+	adapter->connect();
 
-    setlocale(LC_ALL, "");
+	calib ="/home/akudryavtsev/Projects/dso_mwe/camera_hercules.txt";
 
-    mode=1;
-    printf("PHOTOMETRIC MODE WITHOUT CALIBRATION!\n");
-    setting_photometricCalibration = 0;
-    setting_affineOptModeA = 0; //-1: fix. >=0: optimize (with prior, if > 0).
-    setting_affineOptModeB = 0; //-1: fix. >=0: optimize (with prior, if > 0).
+	setlocale(LC_ALL, "");
 
-    // hook crtl+C.
-    boost::thread exThread = boost::thread(exitThread);
+	mode=1;
+	printf("PHOTOMETRIC MODE WITHOUT CALIBRATION!\n");
+	setting_photometricCalibration = 0;
+	setting_affineOptModeA = 0; //-1: fix. >=0: optimize (with prior, if > 0).
+	setting_affineOptModeB = 0; //-1: fix. >=0: optimize (with prior, if > 0).
 
-    ImageFolderReader* reader = new ImageFolderReader(source,calib, gammaCalib, vignette);
-    reader->setGlobalCalibration();
+	// hook crtl+C.
+	boost::thread exThread = boost::thread(exitThread);
 
-    if(setting_photometricCalibration > 0 && reader->getPhotometricGamma() == 0)
-    {
-        printf("ERROR: dont't have photometric calibation. Need to use commandline options mode=1 or mode=2 ");
-        exit(1);
-    }
+	ImageFolderReader* reader = new ImageFolderReader(source,calib, gammaCalib, vignette);
+	reader->setGlobalCalibration();
 
-    int lstart = start;
-    int lend = end;
-    int linc = 1;
-    if(reverse)
-    {
-        printf("REVERSE!!!!");
-        lstart=end-1;
-        if(lstart >= reader->getNumImages())
-            lstart = reader->getNumImages()-1;
-        lend = start;
-        linc = -1;
-    }
+	if(setting_photometricCalibration > 0 && reader->getPhotometricGamma() == 0)
+	{
+		printf("ERROR: dont't have photometric calibation. Need to use commandline options mode=1 or mode=2 ");
+		exit(1);
+	}
 
-    FullSystem* fullSystem = new FullSystem();
-    fullSystem->setGammaFunction(reader->getPhotometricGamma());
-    fullSystem->linearizeOperation = (playbackSpeed==0);
+	int lstart = start;
+	int lend = end;
+	int linc = 1;
+	if(reverse)
+	{
+		printf("REVERSE!!!!");
+		lstart=end-1;
+		if(lstart >= reader->getNumImages())
+		lstart = reader->getNumImages()-1;
+		lend = start;
+		linc = -1;
+	}
 
-    IOWrap::PangolinDSOViewer* viewer = 0;
-    if(!disableAllDisplay)
-    {
-        viewer = new IOWrap::PangolinDSOViewer(wG[0],hG[0], false);
-        fullSystem->outputWrapper.push_back(viewer);
-    }
+	FullSystem* fullSystem = new FullSystem();
+	fullSystem->setGammaFunction(reader->getPhotometricGamma());
+	fullSystem->linearizeOperation = (playbackSpeed==0);
+
+	IOWrap::PangolinDSOViewer* viewer = 0;
+	if(!disableAllDisplay)
+	{
+		viewer = new IOWrap::PangolinDSOViewer(wG[0],hG[0], false);
+		fullSystem->outputWrapper.push_back(viewer);
+	}
 
 	auto ow = new IOWrap::SampleOutputWrapper();
 	fullSystem->outputWrapper.push_back(ow);
-	
 
-	/* 
-	 * All the magin happens here.
-	 * 
-	 */ 
-    std::thread runthread([&]() {
+
+
+	/*
+	* All the magin happens here.
+	*
+	*/
+	std::thread runthread([&]() {
 
 		bool isOperating;
 		try{
 			int ii = 0;
 			isOperating = true;
-			
+
 			//move robot forward to initialize SLAM
 			adapter->setJointVel({0,0,0,0,0,0.001});
 			bool isSLAMInitDone = false;
-			
+
 			while( isOperating ) {
-				
+
 				printf("\n-- START OF FRAME %d \n", ii);
 
 				if(!fullSystem->initialized){	// if not initialized: reset start time.
@@ -199,9 +200,19 @@ int main( int argc, char** argv )
 				//SLAM
 				fullSystem->addActiveFrame(img, i);
 				delete img;
-				
+
 				if(fullSystem->initFailed || setting_fullResetRequested)
 				{
+					std::ofstream myfile;
+					myfile.open ("pointCould.m");
+					myfile << "pcl = [ ";
+					const auto & pcl = ow->pointCloud;
+					for (auto i = 0; i < pcl.size(); i++){
+						myfile << pcl[i] << ";" << std::endl;
+					}
+					myfile << "];" << std::endl;
+					myfile.close();
+
 					if(ii < 1000 || setting_fullResetRequested)
 					{
 						printf("RESETTING!\n");
@@ -222,45 +233,54 @@ int main( int argc, char** argv )
 
 				if(fullSystem->isLost)
 				{
-						printf("LOST!!\n");
-						break;
+					printf("LOST!!\n");
+					break;
 				}
-						
+
 				printf("\n**************************************\n");
-				std::cout << "     Number of 3D points: " 
-				          << ow->pointCloud.size() << std::endl; 
-				printf("**************************************\n\n");				
+				std::cout << "     Number of 3D points: "
+						  << ow->pointCloud.size() << std::endl;
+				printf("**************************************\n\n");
+
+				const auto & cameraPose = fullSystem->camToWorld.matrix3x4();
+				Eigen::Matrix<double,3,4> camPoseMat = fullSystem->camToWorld.matrix3x4();
+				std::cout << "Camera Pose: " << std::endl
+						  << camPoseMat << std::endl;
+				Eigen::Vector4d zAxis;
+
+				printf("**************************************\n\n");
+
 				ii++;
 			}
-			
+
 			fullSystem->blockUntilMappingIsFinished();
-			
-			
+
+
 		}catch(std::exception const& e){
 			//adapter->setJointVel({0,0,0,0,0,0});
 			//std::cerr << e.what() << std::endl;
 			//isOperating = false;
 		}
-    });
+	});
 
 
-    if(viewer != 0)
-        viewer->run();
+	if(viewer != 0)
+	viewer->run();
 
-    runthread.join();
+	runthread.join();
 
-    for(IOWrap::Output3DWrapper* ow : fullSystem->outputWrapper)
-    {
-        ow->join();
-        delete ow;
-    }
+	for(IOWrap::Output3DWrapper* ow : fullSystem->outputWrapper)
+	{
+		ow->join();
+		delete ow;
+	}
 
-    printf("DELETE FULLSYSTEM!\n");
-    delete fullSystem;
+	printf("DELETE FULLSYSTEM!\n");
+	delete fullSystem;
 
-    printf("DELETE READER!\n");
-    delete reader;
+	printf("DELETE READER!\n");
+	delete reader;
 
-    printf("EXIT NOW!\n");
-    return 0;
+	printf("EXIT NOW!\n");
+	return 0;
 }
