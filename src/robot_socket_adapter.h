@@ -56,7 +56,8 @@ class RobotSocketAdapter
         const bool homing();
 
         void getJointPos(std::vector<double> & );
-
+        void getToolTransform(std::vector<double> & );
+        
         std::string getImage();
 
         #ifdef WITH_OPENCV

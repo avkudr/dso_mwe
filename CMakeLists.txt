@@ -17,7 +17,7 @@ set(CMAKE_MODULE_PATH ${DSO_DIR}/cmake)
 # required libraries
 find_package(SuiteParse REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(Boost COMPONENTS system thread) 
+find_package(Boost COMPONENTS system thread)
 
 # optional libraries
 find_package(LibZip QUIET)
@@ -66,7 +66,7 @@ include_directories(
   ${DSO_DIR}/thirdparty/Sophus
   ${DSO_DIR}/thirdparty/sse2neon
   ${EIGEN3_INCLUDE_DIR}
-) 
+)
 
 # compile main library.
 include_directories(
@@ -94,9 +94,11 @@ file(GLOB SOURCES
     3rdparty/cpp-base64/base64.cpp
     src/robot_socket_adapter.cpp
     src/robot_socket_adapter.h
+    src/distances.h
+    src/concentric_tube_robot.h
+    src/concentric_tube_robot.cpp
 )
 
 message("--- compiling dso_mwe")
 add_executable(dso_mwe ${SOURCES} ${PROJECT_SOURCE_DIR}/src/main.cpp)
 target_link_libraries(dso_mwe libdso.a boost_system cxsparse ${BOOST_THREAD_LIBRARY} ${LIBZIP_LIBRARY} ${Pangolin_LIBRARIES} ${OpenCV_LIBS})
-

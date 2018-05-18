@@ -52,6 +52,15 @@
 #include "IOWrapper/OutputWrapper/SampleOutputWrapper.h"
 
 #include "robot_socket_adapter.h"
+#include "distances.h"
+#include "concentric_tube_robot.h"
+
+// I have no idea why it is needed, but in order to have a real displacement of
+// the camera, I had to devide camera translation by it. ...May be smth is wrong
+// with calibration matrix.
+#define WEIRD_SCALE_FACTOR 27.758813860811210
+
+#define CIRCLE_RADIUS 0.2
 
 std::string vignette = "";
 std::string gammaCalib = "";
@@ -94,6 +103,150 @@ void exitThread()
 	while(true) pause();
 }
 
+using Vector3DPoints = std::vector<Eigen::Vector3d,Eigen::aligned_allocator<Eigen::Vector3d>>;
+using Vector2DPoints = std::vector<Eigen::Vector2d,Eigen::aligned_allocator<Eigen::Vector2d>>;
+
+void vectorToSkewSymm(const Eigen::Vector3d v, Eigen::Matrix3d & m){
+	m <<      0, -v.z(),  v.y(),
+	      v.z(),      0, -v.x(),
+		 -v.y(),  v.x(),      0;
+}
+
+void removeRow(Eigen::MatrixXd& matrix, unsigned int rowToRemove)
+{
+    unsigned int numRows = matrix.rows()-1;
+    unsigned int numCols = matrix.cols();
+
+    if( rowToRemove < numRows )
+        matrix.block(rowToRemove,0,numRows-rowToRemove,numCols) = matrix.block(rowToRemove+1,0,numRows-rowToRemove,numCols);
+
+    matrix.conservativeResize(numRows,numCols);
+}
+
+int getNbPointsInsideCircle(
+	const Eigen::Vector3d & point,
+	const Eigen::MatrixXd & pcl,
+	double circleRadius)
+{
+	std::cout << "Getting the number of points close to end-effector..." << std::endl;
+	int nb = 0;
+
+	for (auto i = 0; i < pcl.cols(); i++){
+		Eigen::Vector3d diff;
+		Eigen::Vector3d pointFromCloud = pcl.block<3,1>(0,i);
+		diff = point - pointFromCloud;
+		if (sqrt(diff.x()*diff.x() + diff.y()*diff.y()) < circleRadius){
+			nb++;
+		}
+	}
+	return nb;
+}
+
+Eigen::MatrixXd projectClosePointsOnPlane(
+	const Vector3DPoints pcl,
+	const Eigen::Matrix<double,3,4> & cameraPose,
+	const double distCameraPlane,
+	const double distPointPlane,
+	cv::Point2d & endEffectorPoint,
+	Eigen::Vector3d & desiredPosition)
+{
+	//get plane normal -> camera z axis
+	Eigen::Vector3d plane_normal;
+	plane_normal = cameraPose.block<3,1>(0,2);
+	plane_normal / plane_normal.norm();
+
+	//get explore point -> projection of camera center on the plane
+	Eigen::Vector3d explore_point;
+	Eigen::Vector3d camPosition = cameraPose.block<3,1>(0,3);
+	explore_point = camPosition + distCameraPlane * plane_normal / plane_normal.norm();
+
+	// get plane d from [a,b,c,d]^\top
+	double plane_d = -1*(explore_point.transpose()*plane_normal)(0);
+
+	//Get distances for all points
+	auto nbPts = pcl.size();
+	Eigen::VectorXd dist(nbPts);
+
+	Vector3DPoints pp;
+	pp.clear();
+	//double minZ = 1000;
+	for (auto i = 0; i < nbPts; i++){
+		//minZ = minZ < pcl[i].z() - camPosition.z() ? minZ : pcl[i].z() - camPosition.z();
+		//std::cout << pcl[i].transpose() << std::endl;
+		dist(i) = (plane_normal.transpose() * pcl[i] + plane_d) / plane_normal.norm();
+		if (fabs(dist(i)) < distPointPlane){
+			pp.push_back(pcl[i] - plane_normal / plane_normal.norm() * dist(i));
+		}
+		// dist(i) = (plane_normal.transpose() * pcl[i] + plane_d);
+		// if (fabs(dist(i)) < distPointPlane){
+		// 	pp.push_back(pcl[i] - plane_normal * dist(i));
+		// }
+	}
+
+	std::cout << "projectClosePointsOnPlane : " << pp.size() << std::endl;
+
+	// make the last coordinate equal to zero by applying a rotation
+	Eigen::Vector3d b(0,0,1);
+	Eigen::Vector3d v = plane_normal.cross(b);
+	double c = plane_normal.dot(b);
+	Eigen::Matrix3d rotMat;
+	Eigen::Matrix3d vSkew;
+
+	vectorToSkewSymm(v,vSkew);
+
+	rotMat = Eigen::Matrix3d::Identity() + vSkew + vSkew * vSkew / (1+c);
+
+	Eigen::MatrixXd ppmat(3,pp.size());
+	for (auto i = 0; i < pp.size(); i++){
+		ppmat.block<3,1>(0,i) = pp[i];
+	}
+
+	Eigen::Vector3d eep = rotMat * explore_point;
+	ppmat = rotMat * ppmat;
+
+	// ----------------- Path planning -----------------------------------------
+	// adapt eep to be as far as needed from all other points..
+	// eep -> explore point in 3D with z-coord equal to zeros
+
+	double amplitude = CIRCLE_RADIUS / 40.0 ;
+	double iter = 1.0;
+	Eigen::Vector3d newEep;
+	newEep << eep.x(),eep.y(),eep.z();
+
+	std::cout << "Looking for new desired position..." << std::endl;
+	bool goodDesPosFound = false;
+	while(!goodDesPosFound){
+
+		//how many points are inside the circle
+		int nbPtsInsideConfidence;
+		nbPtsInsideConfidence = getNbPointsInsideCircle(newEep, ppmat, CIRCLE_RADIUS);
+		if ( nbPtsInsideConfidence > 100 ){
+			//try to move one step up, the second step down
+			Eigen::Vector3d amp;
+			amp << 0,amplitude,0;
+			newEep = newEep - iter * amp;
+
+			iter += 1.0;
+			std::cout << "NOT GOOD YET" << std::endl;
+		}else{
+			goodDesPosFound = true;
+			//nothing to do with eep
+		}
+
+	}
+	eep << newEep.x(),newEep.y(),newEep.z();
+	endEffectorPoint = cv::Point2d(eep.x(),eep.y());
+	std::cout << "Done" << std::endl;
+
+	// -------------------------------------------------------------------------
+
+	desiredPosition = rotMat.transpose() * eep;
+
+	removeRow(ppmat, 2);
+	std::cout << "res size: " << ppmat.rows() << "x" << ppmat.cols() << std::endl;
+	return ppmat;
+}
+
 int main( int argc, char** argv )
 {
 
@@ -102,7 +255,7 @@ int main( int argc, char** argv )
 	RobotSocketAdapter * adapter = new RobotSocketAdapter();
 	adapter->connect();
 
-	calib ="/home/akudryavtsev/Projects/dso_mwe/camera_hercules.txt";
+	calib ="/home/akudryavtsev/Projects/dso_mwe/camera_visa2.txt";
 
 	setlocale(LC_ALL, "");
 
@@ -159,18 +312,48 @@ int main( int argc, char** argv )
 	*/
 	std::thread runthread([&]() {
 
+		std::vector<double> joints;
+		adapter->getJointPos(joints);
+		ConcentricTubeRobot * virtualRobot = new ConcentricTubeRobot();
+		virtualRobot->setJointPos(joints);
+
+		cv::Mat plot2d = Mat::zeros( 640, 480, CV_8UC3 );
+
+		bool isMotionPlanningActive = false;
 		bool isOperating;
 		try{
 			int ii = 0;
 			isOperating = true;
 
+			//getting initial robot transform
+			std::vector<double> matrix;
+			adapter->getToolTransform(matrix);
+			Eigen::Matrix4d toolTransform(matrix.data());
+			//std::cout << "Initial tool pose:\n " << toolTransform << std::endl;
+
 			//move robot forward to initialize SLAM
 			adapter->setJointVel({0,0,0,0,0,0.001});
 			bool isSLAMInitDone = false;
 
+			Eigen::Matrix4d initialToolTransform(toolTransform);
+			Eigen::Vector3d offset3D;
+			offset3D << toolTransform(0,3),toolTransform(1,3),toolTransform(2,3);
+			Eigen::Vector2d offset;
+			offset << toolTransform(0,3),toolTransform(2,3); //only x and z
+			Eigen::Vector2d zero;
+			zero << 0,0;
+
+			Vector2DPoints toolPath;
+			toolPath.clear();
+			toolPath.push_back(-offset + offset);
+			toolPath.push_back(   zero + offset);
+
+			//mat.conservativeResize(mat.rows(), mat.cols()+1);
+			//mat.col(mat.cols()-1) = vec;
+
 			while( isOperating ) {
 
-				printf("\n-- START OF FRAME %d \n", ii);
+				//printf("\n-- START OF FRAME %d \n", ii);
 
 				if(!fullSystem->initialized){	// if not initialized: reset start time.
 					std::cout << "SLAM: init phase..." << std::endl;
@@ -237,18 +420,113 @@ int main( int argc, char** argv )
 					break;
 				}
 
-				printf("\n**************************************\n");
-				std::cout << "     Number of 3D points: "
-						  << ow->pointCloud.size() << std::endl;
+				printf("\n**************************************");
+				printf("**************************************\n");
+
+				const auto & pcl = ow->pointCloud;
+				std::cout << "Number of 3D points: "
+						  << pcl.size() << std::endl;
+
+				// get camera pose from slam
+				Eigen::MatrixXd camPoseMat = fullSystem->camToWorld.matrix3x4();
+
+				// get points that are close to the plane parallel to the image frame
+				// but located at a distance d=0.5 from camera. Point is considered as close if
+				// the distance between it and a plane is lower than 0.2
+
+				Eigen::MatrixXd closePointsProjections;
+				cv::Point2d endEffectorPoint;
+				Eigen::Vector3d desiredPosition;
+				closePointsProjections = projectClosePointsOnPlane(pcl,camPoseMat,0.5,0.08,endEffectorPoint,desiredPosition);
+
+				//bring camera to the origin frame (robot base frame)
+				Eigen::Vector4d vec;
+				vec << 0,0,0,1;
+				camPoseMat.conservativeResize(camPoseMat.rows()+1, camPoseMat.cols());
+				camPoseMat.row(camPoseMat.rows()-1) = vec;
+
+				Eigen::Matrix3d rot90deg;
+				rot90deg = Eigen::AngleAxisd(0.5*M_PI, Eigen::Vector3d::UnitZ());
+				Eigen::Matrix4d rot90deg4 = Eigen::Matrix4d::Identity();
+				rot90deg4.block<3,3>(0,0) = rot90deg;
+
+				camPoseMat.block<3,1>(0,3) = camPoseMat.block<3,1>(0,3) / WEIRD_SCALE_FACTOR;
+				camPoseMat = initialToolTransform * rot90deg4.transpose() * camPoseMat * rot90deg4;
+
+				//bring desiredPosition to the origin frame (robot base frame)
+				Eigen::Matrix4d desiredPositionMat = Eigen::Matrix4d::Identity();
+				desiredPositionMat(0,3) = desiredPosition.x() / WEIRD_SCALE_FACTOR;
+				desiredPositionMat(1,3) = desiredPosition.y() / WEIRD_SCALE_FACTOR;
+				desiredPositionMat(2,3) = desiredPosition.z() / WEIRD_SCALE_FACTOR;
+				desiredPositionMat = initialToolTransform * rot90deg4.transpose() * desiredPositionMat * rot90deg4;
+				desiredPosition = desiredPositionMat.block<3,1>(0,3);
+
+				//get current camera position
+				Eigen::Vector3d currentPosition = camPoseMat.block<3,1>(0,3);
+
+				//get the error
+				Eigen::Vector3d error = desiredPosition - currentPosition;
+
+				//get tool pose from visa
+				//adapter->getToolTransform(matrix);
+				//Eigen::Matrix4d toolTransform(matrix.data());
+				//Eigen::Vector3d toolPosition = toolTransform.block<3,1>(0,3);
+				//std::cout << std::endl << "Tool position:\n " << toolTransform << std::endl;
+
+				std::cout << "Current: " << currentPosition.transpose() << std::endl;
+				std::cout << "Desired: " << desiredPosition.transpose() << std::endl;
+				std::cout << "Error: " << error.transpose() << std::endl;
+
+				Eigen::Vector2d newDesPosition;
+				newDesPosition << desiredPosition.x(),desiredPosition.z();
+				toolPath.push_back(newDesPosition);
+				// std::cout << "Tool path: ";
+				// for (const auto & p : toolPath){
+				// 	std::cout << p.transpose() << std::endl;
+				// }
+
+				//--------------- Optimize legnths of segments ---------------//
+				if (isSLAMInitDone){
+					adapter->getJointPos(joints);
+					virtualRobot->setJointPos(joints);
+
+					std::vector<double> newJointPos;
+					virtualRobot->optimizeTubeLengthsForPoints(toolPath,newJointPos);
+
+					std::cout << "Old joint pose: ";
+					for (const auto & q : joints){
+						std::cout << q << " ";
+					}
+					std::cout << std::endl;
+
+					std::cout << "New joint pose: ";
+					for (const auto & q : newJointPos){
+						std::cout << q << " ";
+					}
+					std::cout << std::endl;
+					adapter->setJointPosAbs(newJointPos);
+				}
+
+				printf("**************************************");
 				printf("**************************************\n\n");
 
-				const auto & cameraPose = fullSystem->camToWorld.matrix3x4();
-				Eigen::Matrix<double,3,4> camPoseMat = fullSystem->camToWorld.matrix3x4();
-				std::cout << "Camera Pose: " << std::endl
-						  << camPoseMat << std::endl;
-				Eigen::Vector4d zAxis;
+				//--------------- Additional plots -----------------------------
+				plot2d = Mat::zeros( 480, 640, CV_8UC3 );
+				for (auto i = 0; i < closePointsProjections.cols(); i++){
+					const double x = 300*closePointsProjections(0,i) + 640/2;
+					const double y = 300*closePointsProjections(1,i) + 480/2 + 50;
+					cv::circle(plot2d, Point(x,y),1, Scalar(255,0,255),CV_FILLED,2,0);
+				}
+				cv::circle(plot2d,
+					Point(300*endEffectorPoint.x+640/2,300*endEffectorPoint.y+480/2+50),
+					1, Scalar(255,255,0),CV_FILLED,2,0);
+				cv::circle(plot2d,
+					Point(300*endEffectorPoint.x+640/2,300*endEffectorPoint.y+480/2+50),
+					300*CIRCLE_RADIUS, Scalar(255,255,0),0,2,0);
+				cv::imshow("Image",plot2d);
+				cv::waitKey(1);
 
-				printf("**************************************\n\n");
+				//--------------------------------------------------------------
 
 				ii++;
 			}

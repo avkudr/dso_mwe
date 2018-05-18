@@ -4,7 +4,7 @@
 // STRING MANIPULATIONS
 // =============================================================================
 
-std::string& rtrim(std::string& str, const std::string& chars = "\t\n\v\f\r ")
+std::string& rtrim(std::string& str, const std::string& chars = "\t\n\v\f\r_ ")
 {
     str.erase(str.find_last_not_of(chars) + 1);
     return str;
@@ -94,8 +94,8 @@ const bool RobotSocketAdapter::sendCmd(std::string cmd, std::vector<double> args
     strncpy(buffer, msg.c_str(), msg.size());
     ::send(sock,buffer,msg.size(),0);
 
-    char bufferResponse[51];
-    ::recv(sock, bufferResponse, 51, 0);
+    char bufferResponse[500];
+    ::recv(sock, bufferResponse, 500, 0);
     std::string str(bufferResponse);
     //std::cout << "response from visa" << str << std::endl;
     rtrim(str);
@@ -131,9 +131,9 @@ const bool RobotSocketAdapter::homing()
 void RobotSocketAdapter::getJointPos(std::vector<double> & values)
 {
     char buffer[12] = "GETJOINTPOS";
-    char bufferResponse[1024]; //too large but sure to fit
+    char bufferResponse[500]; //too large but sure to fit
     ::send(sock, buffer,sizeof(buffer)-1,0);
-    ::recv(sock, bufferResponse, sizeof(bufferResponse), 0);
+    ::recv(sock, bufferResponse, 500, 0);
     std::string str(bufferResponse);
     rtrim(str);
     std::vector<std::string> valuesStr = split(str, ',');
@@ -145,15 +145,32 @@ void RobotSocketAdapter::getJointPos(std::vector<double> & values)
     }
 }
 
+void RobotSocketAdapter::getToolTransform(std::vector<double> & matrix)
+{
+    char buffer[11] = "GETTOOLPOS";
+    char bufferResponse[500]; //too large but sure to fit
+    ::send(sock, buffer,sizeof(buffer)-1,0);
+    ::recv(sock, bufferResponse, 500, 0);
+    std::string str(bufferResponse);
+    rtrim(str);
+    std::vector<std::string> valuesStr = split(str, ',');
+
+    matrix.clear();
+    matrix.resize(valuesStr.size());
+    for (auto i = 0; i < matrix.size(); i++){
+        matrix[i] = std::stof(valuesStr[i]);
+    }
+}
+
 std::string RobotSocketAdapter::getImage()
 {
     char buffer[9] = "GETIMAGE";
-    char bufferResponse[51]; //UDP max package size
+    char bufferResponse[500]; //UDP max package size
     char bufferImage[1000000]; //UDP max package size
     std::string msgPrefix = "PACKAGE_LENGTH:";
 
     ::send(sock, buffer, 8, 0);
-    ::recv(sock, bufferResponse, 51, 0);
+    ::recv(sock, bufferResponse, 500, 0);
 
 	std::string message(bufferResponse);
 	message = message.substr(msgPrefix.size(),10);
@@ -195,5 +212,3 @@ vpImage<unsigned char> RobotSocketAdapter::getImageViSP()
     return I;
 }
 #endif
-
-
