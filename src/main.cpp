@@ -208,33 +208,33 @@ Eigen::MatrixXd projectClosePointsOnPlane(
 	// adapt eep to be as far as needed from all other points..
 	// eep -> explore point in 3D with z-coord equal to zeros
 
-	double amplitude = CIRCLE_RADIUS / 40.0 ;
+	double amplitude = CIRCLE_RADIUS / 80.0 ;
+	Eigen::Vector3d amp;
+	amp << 0,amplitude,0;
+
 	double iter = 1.0;
 	Eigen::Vector3d newEep;
 	newEep << eep.x(),eep.y(),eep.z();
 
 	std::cout << "Looking for new desired position..." << std::endl;
-	bool goodDesPosFound = false;
-	while(!goodDesPosFound){
 
-		//how many points are inside the circle
-		int nbPtsInsideConfidence;
-		nbPtsInsideConfidence = getNbPointsInsideCircle(newEep, ppmat, CIRCLE_RADIUS);
-		if ( nbPtsInsideConfidence > 100 ){
-			//try to move one step up, the second step down
-			Eigen::Vector3d amp;
-			amp << 0,amplitude,0;
-			newEep = newEep - iter * amp;
+	Eigen::Vector3d y     = newEep; //copy
+	Eigen::Vector3d yOld  = newEep - amp;
+	int fy    = getNbPointsInsideCircle(   y, ppmat, CIRCLE_RADIUS);
+	int fyOld = getNbPointsInsideCircle(yOld, ppmat, CIRCLE_RADIUS);
 
-			iter += 1.0;
-			std::cout << "NOT GOOD YET" << std::endl;
-		}else{
-			goodDesPosFound = true;
-			//nothing to do with eep
-		}
+	while( fy > 200 ){
+		double delta = y.y() - yOld.y();
+		double grad  = fy - fyOld;
 
+		yOld = y;
+		y.y() = y.y() - 0.005 * grad / delta;
+
+		fyOld = fy;
+		fy = getNbPointsInsideCircle(y, ppmat, CIRCLE_RADIUS);
 	}
-	eep << newEep.x(),newEep.y(),newEep.z();
+
+	eep << y.x(),y.y(),y.z();
 	endEffectorPoint = cv::Point2d(eep.x(),eep.y());
 	std::cout << "Done" << std::endl;
 
@@ -511,18 +511,15 @@ int main( int argc, char** argv )
 				printf("**************************************\n\n");
 
 				//--------------- Additional plots -----------------------------
-				plot2d = Mat::zeros( 480, 640, CV_8UC3 );
+				plot2d = 0.1 * Mat::ones( 480, 640, CV_8UC3 );
+				int scale = 300;
 				for (auto i = 0; i < closePointsProjections.cols(); i++){
-					const double x = 300*closePointsProjections(0,i) + 640/2;
-					const double y = 300*closePointsProjections(1,i) + 480/2 + 50;
+					double x = scale*(closePointsProjections(0,i)-endEffectorPoint.x) + 640/2;
+					double y = scale*(closePointsProjections(1,i)-endEffectorPoint.y) + 480/2;
 					cv::circle(plot2d, Point(x,y),1, Scalar(255,0,255),CV_FILLED,2,0);
 				}
-				cv::circle(plot2d,
-					Point(300*endEffectorPoint.x+640/2,300*endEffectorPoint.y+480/2+50),
-					1, Scalar(255,255,0),CV_FILLED,2,0);
-				cv::circle(plot2d,
-					Point(300*endEffectorPoint.x+640/2,300*endEffectorPoint.y+480/2+50),
-					300*CIRCLE_RADIUS, Scalar(255,255,0),0,2,0);
+				cv::circle(plot2d, Point(640/2,480/2),1, Scalar(255,255,0),CV_FILLED,2,0);
+				cv::circle(plot2d, Point(640/2,480/2),scale*CIRCLE_RADIUS, Scalar(255,255,0),0,2,0);
 				cv::imshow("Image",plot2d);
 				cv::waitKey(1);
 

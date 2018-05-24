@@ -20,7 +20,7 @@ ConcentricTubeRobot::ConcentricTubeRobot()
         _I.push_back( M_PI * ( pow(_radiiExt[i],4) - pow(_radiiInt[i],4)) / 4.0 );
     }
 
-    _tubeKappa  = {0.41,7.2,9.76};
+    _tubeKappa  = {0.41,7.2,9.76}; //9.76
     _tubeLength = {40e-3,155e-3,200e-3};
 
     _alpha = {0,0,0};
