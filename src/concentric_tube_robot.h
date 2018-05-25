@@ -49,6 +49,7 @@ private:
     std::vector<double> _P; // Phi, rotation angle around z
     std::vector<double> _L; // Section's final lengths due to the translation rho
 
+    double _distanceThreshold;
 };
 
 //----------------------------------------------------------------------------------------
@@ -120,6 +121,7 @@ struct MyFunctor : Functor<double>
             double d2 = distancePointArc2D(points[i],arc2center,arc1end,arc2end);
             double d3 = distancePointArc2D(points[i],arc3center,arc2end,arc3end);
             double d  = std::min(d1,std::min(d2,d3));
+            
             // add some confidence region to d
             fvec(i) = d;
         }

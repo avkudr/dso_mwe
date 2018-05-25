@@ -97,6 +97,8 @@ file(GLOB SOURCES
     src/distances.h
     src/concentric_tube_robot.h
     src/concentric_tube_robot.cpp
+    src/path_planner.hpp
+    src/path_planner.cpp
 )
 
 message("--- compiling dso_mwe")

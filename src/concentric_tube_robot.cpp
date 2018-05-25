@@ -26,6 +26,8 @@ ConcentricTubeRobot::ConcentricTubeRobot()
     _alpha = {0,0,0};
     _rho = {0,0,0};
 
+    _distanceThreshold = 0.002; // 2mm -> for optimization
+
     updateRobotKinematics();
 }
 

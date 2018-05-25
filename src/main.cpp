@@ -54,6 +54,7 @@
 #include "robot_socket_adapter.h"
 #include "distances.h"
 #include "concentric_tube_robot.h"
+#include "path_planner.hpp"
 
 // I have no idea why it is needed, but in order to have a real displacement of
 // the camera, I had to devide camera translation by it. ...May be smth is wrong
@@ -105,147 +106,6 @@ void exitThread()
 
 using Vector3DPoints = std::vector<Eigen::Vector3d,Eigen::aligned_allocator<Eigen::Vector3d>>;
 using Vector2DPoints = std::vector<Eigen::Vector2d,Eigen::aligned_allocator<Eigen::Vector2d>>;
-
-void vectorToSkewSymm(const Eigen::Vector3d v, Eigen::Matrix3d & m){
-	m <<      0, -v.z(),  v.y(),
-	      v.z(),      0, -v.x(),
-		 -v.y(),  v.x(),      0;
-}
-
-void removeRow(Eigen::MatrixXd& matrix, unsigned int rowToRemove)
-{
-    unsigned int numRows = matrix.rows()-1;
-    unsigned int numCols = matrix.cols();
-
-    if( rowToRemove < numRows )
-        matrix.block(rowToRemove,0,numRows-rowToRemove,numCols) = matrix.block(rowToRemove+1,0,numRows-rowToRemove,numCols);
-
-    matrix.conservativeResize(numRows,numCols);
-}
-
-int getNbPointsInsideCircle(
-	const Eigen::Vector3d & point,
-	const Eigen::MatrixXd & pcl,
-	double circleRadius)
-{
-	std::cout << "Getting the number of points close to end-effector..." << std::endl;
-	int nb = 0;
-
-	for (auto i = 0; i < pcl.cols(); i++){
-		Eigen::Vector3d diff;
-		Eigen::Vector3d pointFromCloud = pcl.block<3,1>(0,i);
-		diff = point - pointFromCloud;
-		if (sqrt(diff.x()*diff.x() + diff.y()*diff.y()) < circleRadius){
-			nb++;
-		}
-	}
-	return nb;
-}
-
-Eigen::MatrixXd projectClosePointsOnPlane(
-	const Vector3DPoints pcl,
-	const Eigen::Matrix<double,3,4> & cameraPose,
-	const double distCameraPlane,
-	const double distPointPlane,
-	cv::Point2d & endEffectorPoint,
-	Eigen::Vector3d & desiredPosition)
-{
-	//get plane normal -> camera z axis
-	Eigen::Vector3d plane_normal;
-	plane_normal = cameraPose.block<3,1>(0,2);
-	plane_normal / plane_normal.norm();
-
-	//get explore point -> projection of camera center on the plane
-	Eigen::Vector3d explore_point;
-	Eigen::Vector3d camPosition = cameraPose.block<3,1>(0,3);
-	explore_point = camPosition + distCameraPlane * plane_normal / plane_normal.norm();
-
-	// get plane d from [a,b,c,d]^\top
-	double plane_d = -1*(explore_point.transpose()*plane_normal)(0);
-
-	//Get distances for all points
-	auto nbPts = pcl.size();
-	Eigen::VectorXd dist(nbPts);
-
-	Vector3DPoints pp;
-	pp.clear();
-	//double minZ = 1000;
-	for (auto i = 0; i < nbPts; i++){
-		//minZ = minZ < pcl[i].z() - camPosition.z() ? minZ : pcl[i].z() - camPosition.z();
-		//std::cout << pcl[i].transpose() << std::endl;
-		dist(i) = (plane_normal.transpose() * pcl[i] + plane_d) / plane_normal.norm();
-		if (fabs(dist(i)) < distPointPlane){
-			pp.push_back(pcl[i] - plane_normal / plane_normal.norm() * dist(i));
-		}
-		// dist(i) = (plane_normal.transpose() * pcl[i] + plane_d);
-		// if (fabs(dist(i)) < distPointPlane){
-		// 	pp.push_back(pcl[i] - plane_normal * dist(i));
-		// }
-	}
-
-	std::cout << "projectClosePointsOnPlane : " << pp.size() << std::endl;
-
-	// make the last coordinate equal to zero by applying a rotation
-	Eigen::Vector3d b(0,0,1);
-	Eigen::Vector3d v = plane_normal.cross(b);
-	double c = plane_normal.dot(b);
-	Eigen::Matrix3d rotMat;
-	Eigen::Matrix3d vSkew;
-
-	vectorToSkewSymm(v,vSkew);
-
-	rotMat = Eigen::Matrix3d::Identity() + vSkew + vSkew * vSkew / (1+c);
-
-	Eigen::MatrixXd ppmat(3,pp.size());
-	for (auto i = 0; i < pp.size(); i++){
-		ppmat.block<3,1>(0,i) = pp[i];
-	}
-
-	Eigen::Vector3d eep = rotMat * explore_point;
-	ppmat = rotMat * ppmat;
-
-	// ----------------- Path planning -----------------------------------------
-	// adapt eep to be as far as needed from all other points..
-	// eep -> explore point in 3D with z-coord equal to zeros
-
-	double amplitude = CIRCLE_RADIUS / 80.0 ;
-	Eigen::Vector3d amp;
-	amp << 0,amplitude,0;
-
-	double iter = 1.0;
-	Eigen::Vector3d newEep;
-	newEep << eep.x(),eep.y(),eep.z();
-
-	std::cout << "Looking for new desired position..." << std::endl;
-
-	Eigen::Vector3d y     = newEep; //copy
-	Eigen::Vector3d yOld  = newEep - amp;
-	int fy    = getNbPointsInsideCircle(   y, ppmat, CIRCLE_RADIUS);
-	int fyOld = getNbPointsInsideCircle(yOld, ppmat, CIRCLE_RADIUS);
-
-	while( fy > 200 ){
-		double delta = y.y() - yOld.y();
-		double grad  = fy - fyOld;
-
-		yOld = y;
-		y.y() = y.y() - 0.005 * grad / delta;
-
-		fyOld = fy;
-		fy = getNbPointsInsideCircle(y, ppmat, CIRCLE_RADIUS);
-	}
-
-	eep << y.x(),y.y(),y.z();
-	endEffectorPoint = cv::Point2d(eep.x(),eep.y());
-	std::cout << "Done" << std::endl;
-
-	// -------------------------------------------------------------------------
-
-	desiredPosition = rotMat.transpose() * eep;
-
-	removeRow(ppmat, 2);
-	std::cout << "res size: " << ppmat.rows() << "x" << ppmat.cols() << std::endl;
-	return ppmat;
-}
 
 int main( int argc, char** argv )
 {
@@ -316,6 +176,8 @@ int main( int argc, char** argv )
 		adapter->getJointPos(joints);
 		ConcentricTubeRobot * virtualRobot = new ConcentricTubeRobot();
 		virtualRobot->setJointPos(joints);
+
+		PathPlanner * pathPlanner = new PathPlanner();
 
 		cv::Mat plot2d = Mat::zeros( 640, 480, CV_8UC3 );
 
@@ -428,22 +290,22 @@ int main( int argc, char** argv )
 						  << pcl.size() << std::endl;
 
 				// get camera pose from slam
-				Eigen::MatrixXd camPoseMat = fullSystem->camToWorld.matrix3x4();
+				Eigen::MatrixXd camPoseMat = fullSystem->camToWorld.matrix();
 
 				// get points that are close to the plane parallel to the image frame
 				// but located at a distance d=0.5 from camera. Point is considered as close if
 				// the distance between it and a plane is lower than 0.2
 
-				Eigen::MatrixXd closePointsProjections;
-				cv::Point2d endEffectorPoint;
-				Eigen::Vector3d desiredPosition;
-				closePointsProjections = projectClosePointsOnPlane(pcl,camPoseMat,0.5,0.08,endEffectorPoint,desiredPosition);
+				pathPlanner->init(pcl,camPoseMat);
+				pathPlanner->projectClosePointsOnPlane3D();
+				pathPlanner->project3DPointsto2D();
+				pathPlanner->estimateDesiredPoint2D();
 
-				//bring camera to the origin frame (robot base frame)
-				Eigen::Vector4d vec;
-				vec << 0,0,0,1;
-				camPoseMat.conservativeResize(camPoseMat.rows()+1, camPoseMat.cols());
-				camPoseMat.row(camPoseMat.rows()-1) = vec;
+				//-------------- Transform to robot base frame ---------------//
+				// 1. current position
+				camPoseMat(0,3) = camPoseMat(0,3) / WEIRD_SCALE_FACTOR;
+				camPoseMat(1,3) = camPoseMat(1,3) / WEIRD_SCALE_FACTOR;
+				camPoseMat(2,3) = camPoseMat(2,3) / WEIRD_SCALE_FACTOR;
 
 				Eigen::Matrix3d rot90deg;
 				rot90deg = Eigen::AngleAxisd(0.5*M_PI, Eigen::Vector3d::UnitZ());
@@ -452,8 +314,10 @@ int main( int argc, char** argv )
 
 				camPoseMat.block<3,1>(0,3) = camPoseMat.block<3,1>(0,3) / WEIRD_SCALE_FACTOR;
 				camPoseMat = initialToolTransform * rot90deg4.transpose() * camPoseMat * rot90deg4;
+				Eigen::Vector3d currentPosition = camPoseMat.block<3,1>(0,3);
 
-				//bring desiredPosition to the origin frame (robot base frame)
+				// 2. desired position
+				Eigen::Vector3d desiredPosition = pathPlanner->getDesiredPoint3D();
 				Eigen::Matrix4d desiredPositionMat = Eigen::Matrix4d::Identity();
 				desiredPositionMat(0,3) = desiredPosition.x() / WEIRD_SCALE_FACTOR;
 				desiredPositionMat(1,3) = desiredPosition.y() / WEIRD_SCALE_FACTOR;
@@ -461,10 +325,6 @@ int main( int argc, char** argv )
 				desiredPositionMat = initialToolTransform * rot90deg4.transpose() * desiredPositionMat * rot90deg4;
 				desiredPosition = desiredPositionMat.block<3,1>(0,3);
 
-				//get current camera position
-				Eigen::Vector3d currentPosition = camPoseMat.block<3,1>(0,3);
-
-				//get the error
 				Eigen::Vector3d error = desiredPosition - currentPosition;
 
 				//get tool pose from visa
@@ -511,15 +371,21 @@ int main( int argc, char** argv )
 				printf("**************************************\n\n");
 
 				//--------------- Additional plots -----------------------------
-				plot2d = 0.1 * Mat::ones( 480, 640, CV_8UC3 );
-				int scale = 300;
+
+				const auto closePointsProjections = pathPlanner->getClosePointsProjectedOnPlane2D();
+				const auto endEffectorPoint       = pathPlanner->getDesiredPoint2D();
+
+				std::cout << "Number of points close to plane : " << closePointsProjections.cols() << std::endl;
+				plot2d = 100 * Mat::ones( 480, 640, CV_8UC3 );
+				int scale = 400;
 				for (auto i = 0; i < closePointsProjections.cols(); i++){
-					double x = scale*(closePointsProjections(0,i)-endEffectorPoint.x) + 640/2;
-					double y = scale*(closePointsProjections(1,i)-endEffectorPoint.y) + 480/2;
+					double x = scale*(closePointsProjections(0,i)-endEffectorPoint.x()) + 640/2;
+					double y = scale*(closePointsProjections(1,i)-endEffectorPoint.y()) + 480/2;
 					cv::circle(plot2d, Point(x,y),1, Scalar(255,0,255),CV_FILLED,2,0);
 				}
 				cv::circle(plot2d, Point(640/2,480/2),1, Scalar(255,255,0),CV_FILLED,2,0);
-				cv::circle(plot2d, Point(640/2,480/2),scale*CIRCLE_RADIUS, Scalar(255,255,0),0,2,0);
+				cv::circle(plot2d, Point(640/2,480/2),
+					scale*pathPlanner->getCircleRadius(), Scalar(255,255,0),0,2,0);
 				cv::imshow("Image",plot2d);
 				cv::waitKey(1);
 
