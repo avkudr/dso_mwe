@@ -114,6 +114,9 @@ struct MyFunctor : Functor<double>
         arc3center(0) = temp(0);
         arc3center(1) = temp(2);
 
+        double thres = 0.0015; //m
+        double delta = thres/50.0; //slope of tanh FUNCTIONS
+
         for(auto i = 0; i < this->points.size(); i++)
         {
             //fvec(i) = robot->distancePoints2DRobot(L,this->points[i]);
@@ -121,9 +124,13 @@ struct MyFunctor : Functor<double>
             double d2 = distancePointArc2D(points[i],arc2center,arc1end,arc2end);
             double d3 = distancePointArc2D(points[i],arc3center,arc2end,arc3end);
             double d  = std::min(d1,std::min(d2,d3));
-            
+
             // add some confidence region to d
-            fvec(i) = d;
+            // if (d < thres) then cost = 0
+            double cost = 1000000;
+            cost = d * (0.5 + 0.5*tanh((d-thres)/delta));
+
+            fvec(i) = cost;
         }
         fvec(points.size()) = 100 * distancePointPoint(this->points.back(),arc3end);
         //the factor of X translate the fact that this constraint is more important than others

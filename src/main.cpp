@@ -61,8 +61,6 @@
 // with calibration matrix.
 #define WEIRD_SCALE_FACTOR 27.758813860811210
 
-#define CIRCLE_RADIUS 0.2
-
 std::string vignette = "";
 std::string gammaCalib = "";
 std::string source = "";

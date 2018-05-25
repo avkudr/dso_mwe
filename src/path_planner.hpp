@@ -16,7 +16,7 @@ public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     PathPlanner(){
-        this->circleRadius          = 0.2;
+        this->circleRadius          = 0.1;
         this->distanceCameraToPlane = 0.5;
         this->distanceCloseToPlane  = 0.08;
     }
