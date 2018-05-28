@@ -22,6 +22,9 @@ public:
     }
     ~PathPlanner(){}
 
+    void setCircleRadius(double r){
+        this->circleRadius = r;
+    }
     void init(Vector3DPoints pcl, const Eigen::Matrix4d & cameraPose){
         this->pcl = pcl;
         this->cameraPose = cameraPose;

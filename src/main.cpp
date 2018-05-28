@@ -176,6 +176,7 @@ int main( int argc, char** argv )
 		virtualRobot->setJointPos(joints);
 
 		PathPlanner * pathPlanner = new PathPlanner();
+		pathPlanner->setCircleRadius(0.2);
 
 		cv::Mat plot2d = Mat::zeros( 640, 480, CV_8UC3 );
 
@@ -361,6 +362,13 @@ int main( int argc, char** argv )
 					for (const auto & q : newJointPos){
 						std::cout << q << " ";
 					}
+
+					// // correction may be needed
+					// std::vector<double> newJointPosCorr(6);
+					// for (auto i = 0; i < 6; i++) {
+					// 	newJointPosCorr[i] = joints[i] + 0.1 * (newJointPos[i]-joints[i]);
+					// }
+
 					std::cout << std::endl;
 					adapter->setJointPosAbs(newJointPos);
 				}
@@ -374,6 +382,7 @@ int main( int argc, char** argv )
 				const auto endEffectorPoint       = pathPlanner->getDesiredPoint2D();
 
 				std::cout << "Number of points close to plane : " << closePointsProjections.cols() << std::endl;
+				std::cout << "End-effector des pos: (" << endEffectorPoint.x() << ";" << endEffectorPoint.y() << ")"<< std::endl;
 				plot2d = 100 * Mat::ones( 480, 640, CV_8UC3 );
 				int scale = 400;
 				for (auto i = 0; i < closePointsProjections.cols(); i++){

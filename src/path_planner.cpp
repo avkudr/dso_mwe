@@ -87,21 +87,31 @@ void PathPlanner::estimateDesiredPoint2D(){
 
     Eigen::Vector3d y     = newExpPt; //copy
     Eigen::Vector3d yOld  = newExpPt - amp;
+
+    double startingY = y.y();
+
     int fy    = getNbPointsInsideCircle(   y, closePointsProjectedOnPlane2D, this->circleRadius);
     int fyOld = getNbPointsInsideCircle(yOld, closePointsProjectedOnPlane2D, this->circleRadius);
 
+    //replace gradient descent with RMS prop...
+    double alpha = 0.001;
+
     while( fy > 200 ){
-        double delta = y.y() - yOld.y();
-        double grad  = fy - fyOld;
+        double deltaY = y.y() - yOld.y();
+        double deltaF  = fy - fyOld;
 
         yOld = y;
-        y.y() = y.y() - 0.005 * grad / delta;
+
+        std::cout << "Adapting desired position: " << y.y() << std::endl;
+        y.y() = y.y() - alpha * deltaF / deltaY;
 
         fyOld = fy;
         fy = getNbPointsInsideCircle(y, closePointsProjectedOnPlane2D, this->circleRadius);
     }
 
-    this->desiredPoint2D << y.x(),y.y(),y.z();
+    double beta = 0.8;
+    this->desiredPoint2D << y.x(),beta*startingY + (1-beta)*y.y(),y.z();
+    //this->desiredPoint2D << y.x(),y.y(),y.z();
 }
 
 Eigen::Vector3d PathPlanner::getDesiredPoint3D(){

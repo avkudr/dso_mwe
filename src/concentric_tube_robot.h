@@ -114,8 +114,11 @@ struct MyFunctor : Functor<double>
         arc3center(0) = temp(0);
         arc3center(1) = temp(2);
 
-        double thres = 0.0015; //m
-        double delta = thres/50.0; //slope of tanh FUNCTIONS
+        double thres = 0.0025; //m
+        double delta = thres/50.0; //slope of tanh function
+
+        double thresLastPoint = 0.0005; //m
+        double deltaLastPoint = thresLastPoint/50.0; //slope of tanh function
 
         for(auto i = 0; i < this->points.size(); i++)
         {
@@ -127,12 +130,13 @@ struct MyFunctor : Functor<double>
 
             // add some confidence region to d
             // if (d < thres) then cost = 0
-            double cost = 1000000;
+            double cost;
             cost = d * (0.5 + 0.5*tanh((d-thres)/delta));
 
             fvec(i) = cost;
         }
-        fvec(points.size()) = 100 * distancePointPoint(this->points.back(),arc3end);
+        double dlp = distancePointPoint(this->points.back(),arc3end);
+        fvec(points.size()) = 1000 * dlp * (0.5 + 0.5*tanh((dlp-thresLastPoint)/deltaLastPoint));
         //the factor of X translate the fact that this constraint is more important than others
 
         //fvec(points.size()) = fvec(points.size()) * fvec(points.size());
