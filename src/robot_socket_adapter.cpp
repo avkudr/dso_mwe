@@ -166,7 +166,6 @@ std::string RobotSocketAdapter::getImage()
 {
     char buffer[9] = "GETIMAGE";
     char bufferResponse[500]; //UDP max package size
-    char bufferImage[1000000]; //UDP max package size
     std::string msgPrefix = "PACKAGE_LENGTH:";
 
     ::send(sock, buffer, 8, 0);
@@ -180,13 +179,16 @@ std::string RobotSocketAdapter::getImage()
 	int imageSize = std::stoi(message); //parse int
 	//std::cout << "imageSize: " << imageSize << std::endl;
 
+    char * bufferImage = new char[imageSize+2]; //allocate memory
 	//acquire the image
 	::recv(sock, bufferImage, imageSize+1, MSG_WAITALL);
 
 	//delete prefix and decode
 	std::string encodedImage(bufferImage);
-	encodedImage = encodedImage.substr(0,imageSize);
 
+    delete[] bufferImage;
+
+	encodedImage = encodedImage.substr(0,imageSize);
     encodedImage.erase(0,22);
     return base64_decode(encodedImage);
 }
