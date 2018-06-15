@@ -176,7 +176,7 @@ int main( int argc, char** argv )
 		virtualRobot->setJointPos(joints);
 
 		PathPlanner * pathPlanner = new PathPlanner();
-		pathPlanner->setCircleRadius(0.2);
+		pathPlanner->setCircleRadius(0.25);
 
 		cv::Mat plot2d = Mat::zeros( 640, 480, CV_8UC3 );
 
@@ -193,7 +193,7 @@ int main( int argc, char** argv )
 			//std::cout << "Initial tool pose:\n " << toolTransform << std::endl;
 
 			//move robot forward to initialize SLAM
-			adapter->setJointVel({0,0,0,0,0,0.001});
+			adapter->setJointVel({0,0,0,0,0,0.0005});
 			bool isSLAMInitDone = false;
 
 			Eigen::Matrix4d initialToolTransform(toolTransform);
@@ -300,6 +300,35 @@ int main( int argc, char** argv )
 				pathPlanner->project3DPointsto2D();
 				pathPlanner->estimateDesiredPoint2D();
 
+				double beta = 0;
+				//if (pathPlanner->isCollisionExpected()){
+					beta = 1;
+					double dwy = 3.14 / 100; //rad/s
+					double l1 = virtualRobot->getSegmentLength(0);
+					double l2 = virtualRobot->getSegmentLength(1);
+					double l3 = virtualRobot->getSegmentLength(2);
+					double k2 = virtualRobot->getSegmentCurvature(1);
+					double r = 1/k2;
+					std::cout << "Radius: " << r << std::endl;
+
+					double dl2 = dwy * r;
+					double dl1 = - (sin(l2/r) + (l3*cos(l2/r))/r) * dl2 / (sin(l2/r));
+					double dl3 = -dl2 * (cos(l2/r) - (l3*sin(l2/r))/r) - dl3 * cos(l2/r);
+
+					Eigen::Vector3d dl;
+					dl << dl1,dl2,dl3;
+					double max = (fabs(dl1) > fabs(dl2)) ? dl1 : dl2;
+					       max = (fabs(max) > fabs(dl3)) ? max : dl3;
+				    if (fabs(max) > 0.0005){
+						dl = dl / fabs(max) * 0.0005;
+					}
+
+					adapter->setJointVel({0,0,0,dl(0),dl(1),dl(2)});
+				//}else{
+				//	adapter->setJointVel({0,0,0,0,0,0.0005});
+				//}
+				std::cout << "BETA: " << beta << std::endl;
+
 				//-------------- Transform to robot base frame ---------------//
 				// 1. current position
 				camPoseMat(0,3) = camPoseMat(0,3) / WEIRD_SCALE_FACTOR;
@@ -348,29 +377,6 @@ int main( int argc, char** argv )
 				if (isSLAMInitDone){
 					adapter->getJointPos(joints);
 					virtualRobot->setJointPos(joints);
-
-					std::vector<double> newJointPos;
-					virtualRobot->optimizeTubeLengthsForPoints(toolPath,newJointPos);
-
-					std::cout << "Old joint pose: ";
-					for (const auto & q : joints){
-						std::cout << q << " ";
-					}
-					std::cout << std::endl;
-
-					std::cout << "New joint pose: ";
-					for (const auto & q : newJointPos){
-						std::cout << q << " ";
-					}
-
-					// // correction may be needed
-					// std::vector<double> newJointPosCorr(6);
-					// for (auto i = 0; i < 6; i++) {
-					// 	newJointPosCorr[i] = joints[i] + 0.1 * (newJointPos[i]-joints[i]);
-					// }
-
-					std::cout << std::endl;
-					adapter->setJointPosAbs(newJointPos);
 				}
 
 				printf("**************************************");
@@ -384,7 +390,7 @@ int main( int argc, char** argv )
 				std::cout << "Number of points close to plane : " << closePointsProjections.cols() << std::endl;
 				std::cout << "End-effector des pos: (" << endEffectorPoint.x() << ";" << endEffectorPoint.y() << ")"<< std::endl;
 				plot2d = 100 * Mat::ones( 480, 640, CV_8UC3 );
-				int scale = 400;
+				int scale = 200;
 				for (auto i = 0; i < closePointsProjections.cols(); i++){
 					double x = scale*(closePointsProjections(0,i)-endEffectorPoint.x()) + 640/2;
 					double y = scale*(closePointsProjections(1,i)-endEffectorPoint.y()) + 480/2;

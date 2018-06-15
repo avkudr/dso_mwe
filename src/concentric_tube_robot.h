@@ -34,6 +34,9 @@ public:
     std::vector<double> getResultingCurvature() const {return _K;}
     VectorOfTransforms _T; //transformation matrices
 
+    double getSegmentLength(int i){return _L[i];}
+    double getSegmentCurvature(int i){return _K[i];}
+
 private:
     int _nbTubes;
     double _E; // Modulus of elasticity (Young's modulus)

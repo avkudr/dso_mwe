@@ -3,24 +3,24 @@
 ConcentricTubeRobot::ConcentricTubeRobot()
 {
     _nbTubes = 3;
-    _E = 40e9;
+    _E = 80e9;
 
     _radiiInt = {
-        (2.668e-3)/2,
-        (1.473e-3)/2,
-        (0.96e-3)/2
+        (1.100e-3)/2,
+        (0.770e-3)/2,
+        (0.414e-3)/2
     };
     _radiiExt = { // external
-        (3.112e-3)/2,
-        (2.032e-3)/2,
-        (1.32e-3)/2
+        (1.600e-3)/2,
+        (1.010e-3)/2,
+        (0.640e-3)/2
     };
 
     for(auto i = 0; i < _radiiInt.size(); i++){
         _I.push_back( M_PI * ( pow(_radiiExt[i],4) - pow(_radiiInt[i],4)) / 4.0 );
     }
 
-    _tubeKappa  = {0.41,7.2,9.76}; //9.76
+    _tubeKappa  = {-6.503325,48.033717802220,0}; //9.76
     _tubeLength = {40e-3,155e-3,200e-3};
 
     _alpha = {0,0,0};
@@ -81,20 +81,37 @@ void ConcentricTubeRobot::estimateTransformMatrices(VectorOfTransforms &T, std::
     if (T.size() != _nbTubes + 1) T.resize(_nbTubes + 1);
 
     for(int i = 0; i < _nbTubes; i++){
-        T[i+1](0,0) = cos(_P[i])*cos(_K[i]*L[i]);
-        T[i+1](0,1) = -sin(_P[i]);
-        T[i+1](0,2) = cos(_P[i])*sin(_K[i]*L[i]);
-        T[i+1](0,3) = cos(_P[i])*(1-cos(_K[i]*L[i]))/_K[i];
+        if (_K[i] < 0.001){
+            T[i+1](0,0) = cos(_P[i]);
+            T[i+1](0,1) = -sin(_P[i]);
+            T[i+1](0,2) = 0;
+            T[i+1](0,3) = 0;
 
-        T[i+1](1,0) = sin(_P[i])*cos(_K[i]*L[i]);
-        T[i+1](1,1) = cos(_P[i]);
-        T[i+1](1,2) = sin(_P[i])*sin(_K[i]*L[i]);
-        T[i+1](1,3) = sin(_P[i])*(1-cos(_K[i]*L[i]))/_K[i];
+            T[i+1](1,0) = sin(_P[i]);
+            T[i+1](1,1) = cos(_P[i]);
+            T[i+1](1,2) = 0;
+            T[i+1](1,3) = 0;
 
-        T[i+1](2,0) = -sin(_K[i]*L[i]);
-        T[i+1](2,1) = 0;
-        T[i+1](2,2) = cos(_K[i]*L[i]);
-        T[i+1](2,3) = sin(_K[i]*L[i])/_K[i];
+            T[i+1](2,0) = 0;
+            T[i+1](2,1) = 0;
+            T[i+1](2,2) = 1;
+            T[i+1](2,3) = L[i];
+        }else{
+            T[i+1](0,0) = cos(_P[i])*cos(_K[i]*L[i]);
+            T[i+1](0,1) = -sin(_P[i]);
+            T[i+1](0,2) = cos(_P[i])*sin(_K[i]*L[i]);
+            T[i+1](0,3) = cos(_P[i])*(1-cos(_K[i]*L[i]))/_K[i];
+
+            T[i+1](1,0) = sin(_P[i])*cos(_K[i]*L[i]);
+            T[i+1](1,1) = cos(_P[i]);
+            T[i+1](1,2) = sin(_P[i])*sin(_K[i]*L[i]);
+            T[i+1](1,3) = sin(_P[i])*(1-cos(_K[i]*L[i]))/_K[i];
+
+            T[i+1](2,0) = -sin(_K[i]*L[i]);
+            T[i+1](2,1) = 0;
+            T[i+1](2,2) = cos(_K[i]*L[i]);
+            T[i+1](2,3) = sin(_K[i]*L[i])/_K[i];
+        }
     }
 
     T[0].setIdentity();

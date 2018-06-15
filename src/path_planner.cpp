@@ -73,45 +73,17 @@ void PathPlanner::estimateDesiredPoint2D(){
     // ----------------- Path planning -----------------------------------------
     // adapt explorePoint2D to be as far as needed from all other points..
     // explorePoint2D -> starting explore point in 3D with z-coord equal to zeros
-    // desiredPoint2D -> result of optimization
 
-    double amplitude = this->circleRadius / 80.0 ;
-    Eigen::Vector3d amp;
-    amp << 0,amplitude,0;
+    this->desiredPoint2D = this->explorePoint2D;
+}
 
-    double iter = 1.0;
-    Eigen::Vector3d newExpPt;
-    newExpPt << this->explorePoint2D.x(),this->explorePoint2D.y(),this->explorePoint2D.z();
-
-    std::cout << "Looking for new desired position..." << std::endl;
-
-    Eigen::Vector3d y     = newExpPt; //copy
-    Eigen::Vector3d yOld  = newExpPt - amp;
-
-    double startingY = y.y();
-
-    int fy    = getNbPointsInsideCircle(   y, closePointsProjectedOnPlane2D, this->circleRadius);
-    int fyOld = getNbPointsInsideCircle(yOld, closePointsProjectedOnPlane2D, this->circleRadius);
-
-    //replace gradient descent with RMS prop...
-    double alpha = 0.001;
-
-    while( fy > 200 ){
-        double deltaY = y.y() - yOld.y();
-        double deltaF  = fy - fyOld;
-
-        yOld = y;
-
-        std::cout << "Adapting desired position: " << y.y() << std::endl;
-        y.y() = y.y() - alpha * deltaF / deltaY;
-
-        fyOld = fy;
-        fy = getNbPointsInsideCircle(y, closePointsProjectedOnPlane2D, this->circleRadius);
+bool PathPlanner::isCollisionExpected(){
+    int nbPts = getNbPointsInsideCircle(this->explorePoint2D, this->closePointsProjectedOnPlane2D, this->circleRadius);
+    if (nbPts > 200){
+        return true;
+    }else{
+        return false;
     }
-
-    double beta = 0.8;
-    this->desiredPoint2D << y.x(),beta*startingY + (1-beta)*y.y(),y.z();
-    //this->desiredPoint2D << y.x(),y.y(),y.z();
 }
 
 Eigen::Vector3d PathPlanner::getDesiredPoint3D(){

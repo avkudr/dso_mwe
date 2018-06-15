@@ -17,8 +17,8 @@ public:
 
     PathPlanner(){
         this->circleRadius          = 0.1;
-        this->distanceCameraToPlane = 0.5;
-        this->distanceCloseToPlane  = 0.08;
+        this->distanceCameraToPlane = 2.0; //drawPlaneInFront
+        this->distanceCloseToPlane  = 0.2;
     }
     ~PathPlanner(){}
 
@@ -41,6 +41,7 @@ public:
     Eigen::Vector3d getDesiredPoint2D(){
         return desiredPoint2D;
     }
+    bool isCollisionExpected();
 
 private:
     int getNbPointsInsideCircle(
