@@ -176,7 +176,7 @@ int main( int argc, char** argv )
 		virtualRobot->setJointPos(joints);
 
 		PathPlanner * pathPlanner = new PathPlanner();
-		pathPlanner->setCircleRadius(0.25);
+		pathPlanner->setCircleRadius(0.09);
 
 		cv::Mat plot2d = Mat::zeros( 640, 480, CV_8UC3 );
 
@@ -193,7 +193,7 @@ int main( int argc, char** argv )
 			//std::cout << "Initial tool pose:\n " << toolTransform << std::endl;
 
 			//move robot forward to initialize SLAM
-			adapter->setJointVel({0,0,0,0,0,0.0005});
+			//adapter->setJointVel({0,0,0,0,0,0.0005});
 			bool isSLAMInitDone = false;
 
 			Eigen::Matrix4d initialToolTransform(toolTransform);
@@ -301,9 +301,13 @@ int main( int argc, char** argv )
 				pathPlanner->estimateDesiredPoint2D();
 
 				double beta = 0;
-				//if (pathPlanner->isCollisionExpected()){
+
+				adapter->getJointPos(joints);
+				virtualRobot->setJointPos(joints);
+
+				if (pathPlanner->isCollisionExpected()){
 					beta = 1;
-					double dwy = 3.14 / 100; //rad/s
+					double dwy = 3.14 / 400; //rad/s
 					double l1 = virtualRobot->getSegmentLength(0);
 					double l2 = virtualRobot->getSegmentLength(1);
 					double l3 = virtualRobot->getSegmentLength(2);
@@ -312,21 +316,21 @@ int main( int argc, char** argv )
 					std::cout << "Radius: " << r << std::endl;
 
 					double dl2 = dwy * r;
-					double dl1 = - (sin(l2/r) + (l3*cos(l2/r))/r) * dl2 / (sin(l2/r));
-					double dl3 = -dl2 * (cos(l2/r) - (l3*sin(l2/r))/r) - dl3 * cos(l2/r);
+					if (fabs(dl2) > 0.002) dl2 = dl2 / fabs(dl2) * 0.002;
+					double dl3 = - (sin(l2/r) + (l3*cos(l2/r))/r) * dl2 / (sin(l2/r));
+					double dl1 = - dl2 * (cos(l2/r) - (l3*sin(l2/r))/r) - dl3 * cos(l2/r);
 
-					Eigen::Vector3d dl;
-					dl << dl1,dl2,dl3;
-					double max = (fabs(dl1) > fabs(dl2)) ? dl1 : dl2;
-					       max = (fabs(max) > fabs(dl3)) ? max : dl3;
-				    if (fabs(max) > 0.0005){
-						dl = dl / fabs(max) * 0.0005;
+					dl2 = dl2 + dl1;
+					dl3 = dl3 + dl2;
+
+					adapter->setJointVel({0,0,0,dl1,dl2,dl3+0.0002});
+				}else{
+					if (isSLAMInitDone){
+						adapter->setJointVel({0,0,0,0.0001,0.0001,0.001});
+					}else{
+						adapter->setJointVel({0,0,0,0.0001,0.0001,0.0002});
 					}
-
-					adapter->setJointVel({0,0,0,dl(0),dl(1),dl(2)});
-				//}else{
-				//	adapter->setJointVel({0,0,0,0,0,0.0005});
-				//}
+				}
 				std::cout << "BETA: " << beta << std::endl;
 
 				//-------------- Transform to robot base frame ---------------//
@@ -374,10 +378,10 @@ int main( int argc, char** argv )
 				// }
 
 				//--------------- Optimize legnths of segments ---------------//
-				if (isSLAMInitDone){
-					adapter->getJointPos(joints);
-					virtualRobot->setJointPos(joints);
-				}
+				// if (isSLAMInitDone){
+				// 	adapter->getJointPos(joints);
+				// 	virtualRobot->setJointPos(joints);
+				// }
 
 				printf("**************************************");
 				printf("**************************************\n\n");

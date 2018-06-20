@@ -17,7 +17,7 @@ public:
 
     PathPlanner(){
         this->circleRadius          = 0.1;
-        this->distanceCameraToPlane = 2.0; //drawPlaneInFront
+        this->distanceCameraToPlane = 1.3; //drawPlaneInFront
         this->distanceCloseToPlane  = 0.2;
     }
     ~PathPlanner(){}

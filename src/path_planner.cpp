@@ -79,7 +79,7 @@ void PathPlanner::estimateDesiredPoint2D(){
 
 bool PathPlanner::isCollisionExpected(){
     int nbPts = getNbPointsInsideCircle(this->explorePoint2D, this->closePointsProjectedOnPlane2D, this->circleRadius);
-    if (nbPts > 200){
+    if (nbPts > 50){
         return true;
     }else{
         return false;
