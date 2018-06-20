@@ -18,7 +18,7 @@ public:
     PathPlanner(){
         this->circleRadius          = 0.1;
         this->distanceCameraToPlane = 1.3; //drawPlaneInFront
-        this->distanceCloseToPlane  = 0.2;
+        this->distanceCloseToPlane  = 0.08;
     }
     ~PathPlanner(){}
 
@@ -42,6 +42,7 @@ public:
         return desiredPoint2D;
     }
     bool isCollisionExpected();
+    double getRepulsiveForceZ();
 
 private:
     int getNbPointsInsideCircle(

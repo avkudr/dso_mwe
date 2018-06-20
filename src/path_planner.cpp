@@ -91,6 +91,25 @@ Eigen::Vector3d PathPlanner::getDesiredPoint3D(){
     return this->desiredPoint3D;
 }
 
+double PathPlanner::getRepulsiveForceZ(){
+    const auto & point = this->explorePoint2D;
+    const auto & pcl   = this->closePointsProjectedOnPlane2D;
+
+    Eigen::Vector2d direction;
+    direction << 0,0;
+    for (auto i = 0; i < pcl.cols(); i++){
+        Eigen::Vector3d diff;
+        Eigen::Vector3d pointFromCloud = pcl.block<3,1>(0,i);
+        diff = pointFromCloud - point;
+        double dist = sqrt(diff.x()*diff.x() + diff.y()*diff.y());
+        if (dist < circleRadius && fabs(diff.x()) < circleRadius/2){
+            direction[0] +=  diff.x() / dist / dist;
+            direction[1] += -diff.y() / dist / dist;
+        }
+    }
+    return direction[1];
+}
+
 //-------------------------- SUPPLEMENTATY FUNCTIONS ---------------------------
 
 void PathPlanner::vectorToSkewSymm(const Eigen::Vector3d v, Eigen::Matrix3d & m){

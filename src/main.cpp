@@ -105,6 +105,30 @@ void exitThread()
 using Vector3DPoints = std::vector<Eigen::Vector3d,Eigen::aligned_allocator<Eigen::Vector3d>>;
 using Vector2DPoints = std::vector<Eigen::Vector2d,Eigen::aligned_allocator<Eigen::Vector2d>>;
 
+double sigmoid(double lambda, double F){
+	return (2-2./(1+exp(-lambda*fabs(F))));
+}
+
+Eigen::Vector3d getRotationTaskVels(double l1, double l2, double l3, double k2,double F){
+	Eigen::Matrix3d J;
+	J(0,0) = -cos(k2*l2)/sin(k2*l2);
+	J(0,1) = 1;
+	J(0,2) = (k2*(k2*l3*cos(k2*l2)*cos(k2*l2) + k2*l3*sin(k2*l2)*sin(k2*l2)))/sin(k2*l2);
+
+	J(1,0) = -cos(k2*l2)/sin(k2*l2);
+	J(1,1) = 1;
+	J(1,2) = k2 + (k2*(k2*l3*cos(k2*l2)*cos(k2*l2) + k2*l3*sin(k2*l2)*sin(k2*l2)))/sin(k2*l2);
+
+	J(2,0) = 1/sin(k2*l2) - cos(k2*l2)/sin(k2*l2);
+	J(2,1) = 1;
+	J(2,2) = k2 + (k2*(k2*l3*cos(k2*l2)*cos(k2*l2) + k2*l3*sin(k2*l2)*sin(k2*l2)))/sin(k2*l2) - (k2*(sin(k2*l2) + k2*l3*cos(k2*l2)))/sin(k2*l2);
+
+	Eigen::Vector3d v;
+	v << 0,0,F;
+
+	return J*v;
+}
+
 int main( int argc, char** argv )
 {
 
@@ -176,7 +200,7 @@ int main( int argc, char** argv )
 		virtualRobot->setJointPos(joints);
 
 		PathPlanner * pathPlanner = new PathPlanner();
-		pathPlanner->setCircleRadius(0.09);
+		pathPlanner->setCircleRadius(0.1);
 
 		cv::Mat plot2d = Mat::zeros( 640, 480, CV_8UC3 );
 
@@ -298,98 +322,38 @@ int main( int argc, char** argv )
 				pathPlanner->init(pcl,camPoseMat);
 				pathPlanner->projectClosePointsOnPlane3D();
 				pathPlanner->project3DPointsto2D();
-				pathPlanner->estimateDesiredPoint2D();
 
-				double beta = 0;
+				double lambda = 0.0005;
+				double F = lambda * pathPlanner->getRepulsiveForceZ();
 
 				adapter->getJointPos(joints);
 				virtualRobot->setJointPos(joints);
 
-				if (pathPlanner->isCollisionExpected()){
-					beta = 1;
-					double dwy = 3.14 / 400; //rad/s
-					double l1 = virtualRobot->getSegmentLength(0);
-					double l2 = virtualRobot->getSegmentLength(1);
-					double l3 = virtualRobot->getSegmentLength(2);
-					double k2 = virtualRobot->getSegmentCurvature(1);
-					double r = 1/k2;
-					std::cout << "Radius: " << r << std::endl;
 
-					double dl2 = dwy * r;
-					if (fabs(dl2) > 0.002) dl2 = dl2 / fabs(dl2) * 0.002;
-					double dl3 = - (sin(l2/r) + (l3*cos(l2/r))/r) * dl2 / (sin(l2/r));
-					double dl1 = - dl2 * (cos(l2/r) - (l3*sin(l2/r))/r) - dl3 * cos(l2/r);
+				double beta = sigmoid(10,2*F);
+				std::cout << "beta: " << beta << std::endl;
+				Eigen::Vector3d v1, v2;
+				v1 << 0.0004,0.0004,0.0005;
 
-					dl2 = dl2 + dl1;
-					dl3 = dl3 + dl2;
+				double l1 = virtualRobot->getSegmentLength(0);
+				double l2 = virtualRobot->getSegmentLength(1);
+				double l3 = virtualRobot->getSegmentLength(2);
+				double k2 = virtualRobot->getSegmentCurvature(1);
+				v2 = getRotationTaskVels(l1,l2,l3,k2,F);
 
-					adapter->setJointVel({0,0,0,dl1,dl2,dl3+0.0002});
-				}else{
-					if (isSLAMInitDone){
-						adapter->setJointVel({0,0,0,0.0001,0.0001,0.001});
-					}else{
-						adapter->setJointVel({0,0,0,0.0001,0.0001,0.0002});
-					}
-				}
-				std::cout << "BETA: " << beta << std::endl;
+				if (beta > 0.7) beta = 1;
+				if (beta < 0.3) beta = 0.3;
+				auto v = beta*v1 + 0.000008 * (1-beta)*v2;
 
-				//-------------- Transform to robot base frame ---------------//
-				// 1. current position
-				camPoseMat(0,3) = camPoseMat(0,3) / WEIRD_SCALE_FACTOR;
-				camPoseMat(1,3) = camPoseMat(1,3) / WEIRD_SCALE_FACTOR;
-				camPoseMat(2,3) = camPoseMat(2,3) / WEIRD_SCALE_FACTOR;
-
-				Eigen::Matrix3d rot90deg;
-				rot90deg = Eigen::AngleAxisd(0.5*M_PI, Eigen::Vector3d::UnitZ());
-				Eigen::Matrix4d rot90deg4 = Eigen::Matrix4d::Identity();
-				rot90deg4.block<3,3>(0,0) = rot90deg;
-
-				camPoseMat.block<3,1>(0,3) = camPoseMat.block<3,1>(0,3) / WEIRD_SCALE_FACTOR;
-				camPoseMat = initialToolTransform * rot90deg4.transpose() * camPoseMat * rot90deg4;
-				Eigen::Vector3d currentPosition = camPoseMat.block<3,1>(0,3);
-
-				// 2. desired position
-				Eigen::Vector3d desiredPosition = pathPlanner->getDesiredPoint3D();
-				Eigen::Matrix4d desiredPositionMat = Eigen::Matrix4d::Identity();
-				desiredPositionMat(0,3) = desiredPosition.x() / WEIRD_SCALE_FACTOR;
-				desiredPositionMat(1,3) = desiredPosition.y() / WEIRD_SCALE_FACTOR;
-				desiredPositionMat(2,3) = desiredPosition.z() / WEIRD_SCALE_FACTOR;
-				desiredPositionMat = initialToolTransform * rot90deg4.transpose() * desiredPositionMat * rot90deg4;
-				desiredPosition = desiredPositionMat.block<3,1>(0,3);
-
-				Eigen::Vector3d error = desiredPosition - currentPosition;
-
-				//get tool pose from visa
-				//adapter->getToolTransform(matrix);
-				//Eigen::Matrix4d toolTransform(matrix.data());
-				//Eigen::Vector3d toolPosition = toolTransform.block<3,1>(0,3);
-				//std::cout << std::endl << "Tool position:\n " << toolTransform << std::endl;
-
-				std::cout << "Current: " << currentPosition.transpose() << std::endl;
-				std::cout << "Desired: " << desiredPosition.transpose() << std::endl;
-				std::cout << "Error: " << error.transpose() << std::endl;
-
-				Eigen::Vector2d newDesPosition;
-				newDesPosition << desiredPosition.x(),desiredPosition.z();
-				toolPath.push_back(newDesPosition);
-				// std::cout << "Tool path: ";
-				// for (const auto & p : toolPath){
-				// 	std::cout << p.transpose() << std::endl;
-				// }
-
-				//--------------- Optimize legnths of segments ---------------//
-				// if (isSLAMInitDone){
-				// 	adapter->getJointPos(joints);
-				// 	virtualRobot->setJointPos(joints);
-				// }
+				adapter->setJointVel({0,0,0,v(0),v(1),v(2)});
 
 				printf("**************************************");
 				printf("**************************************\n\n");
 
 				//--------------- Additional plots -----------------------------
 
-				const auto closePointsProjections = pathPlanner->getClosePointsProjectedOnPlane2D();
-				const auto endEffectorPoint       = pathPlanner->getDesiredPoint2D();
+				const auto & closePointsProjections = pathPlanner->getClosePointsProjectedOnPlane2D();
+				const auto & endEffectorPoint       = pathPlanner->getDesiredPoint2D();
 
 				std::cout << "Number of points close to plane : " << closePointsProjections.cols() << std::endl;
 				std::cout << "End-effector des pos: (" << endEffectorPoint.x() << ";" << endEffectorPoint.y() << ")"<< std::endl;
@@ -403,6 +367,7 @@ int main( int argc, char** argv )
 				cv::circle(plot2d, Point(640/2,480/2),1, Scalar(255,255,0),CV_FILLED,2,0);
 				cv::circle(plot2d, Point(640/2,480/2),
 					scale*pathPlanner->getCircleRadius(), Scalar(255,255,0),0,2,0);
+				cv::line(plot2d, Point(640/2,480/2), Point(640/2,480/2+scale*F), Scalar(255,0,0));
 				cv::imshow("Image",plot2d);
 				cv::waitKey(1);
 
