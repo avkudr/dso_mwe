@@ -17,8 +17,8 @@ public:
 
     PathPlanner(){
         this->circleRadius          = 0.1;
-        this->distanceCameraToPlane = 1.3; //drawPlaneInFront
-        this->distanceCloseToPlane  = 0.08;
+        this->distanceCameraToPlane = 1.0; //drawPlaneInFront
+        this->distanceCloseToPlane  = 0.15;
     }
     ~PathPlanner(){}
 
@@ -39,7 +39,10 @@ public:
         return closePointsProjectedOnPlane2D;
     }
     Eigen::Vector3d getDesiredPoint2D(){
-        return desiredPoint2D;
+        return this->desiredPoint2D;
+    }
+    Eigen::Vector3d getExplorePoint2D(){
+        return this->explorePoint2D;
     }
     bool isCollisionExpected();
     double getRepulsiveForceZ();

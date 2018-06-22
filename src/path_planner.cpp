@@ -46,8 +46,8 @@ void PathPlanner::project3DPointsto2D(){
 
     this->rotationMatrix = Eigen::Matrix3d::Identity() + vSkew + vSkew * vSkew / (1+c);
 
-    explorePoint2D = rotationMatrix * explorePoint3D;
-    closePointsProjectedOnPlane2D = rotationMatrix * closePointsProjectedOnPlane3D;
+    this->explorePoint2D = rotationMatrix * this->explorePoint3D;
+    this->closePointsProjectedOnPlane2D = rotationMatrix * this->closePointsProjectedOnPlane3D;
 }
 
 int PathPlanner::getNbPointsInsideCircle(
@@ -95,6 +95,7 @@ double PathPlanner::getRepulsiveForceZ(){
     const auto & point = this->explorePoint2D;
     const auto & pcl   = this->closePointsProjectedOnPlane2D;
 
+    int nbClosePts = 0;
     Eigen::Vector2d direction;
     direction << 0,0;
     for (auto i = 0; i < pcl.cols(); i++){
@@ -105,9 +106,11 @@ double PathPlanner::getRepulsiveForceZ(){
         if (dist < circleRadius && fabs(diff.x()) < circleRadius/2){
             direction[0] +=  diff.x() / dist / dist;
             direction[1] += -diff.y() / dist / dist;
+            nbClosePts++;
         }
     }
-    return direction[1];
+    std::cout << "NB OF CLOSE POINTS: " << nbClosePts << std::endl;
+    return direction[1] * nbClosePts;
 }
 
 //-------------------------- SUPPLEMENTATY FUNCTIONS ---------------------------

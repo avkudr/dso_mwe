@@ -137,7 +137,7 @@ int main( int argc, char** argv )
 	RobotSocketAdapter * adapter = new RobotSocketAdapter();
 	adapter->connect();
 
-	calib ="/home/akudryavtsev/Projects/dso_mwe/camera_visa2.txt";
+	calib ="/home/akudryavtsev/Projects/dso_mwe/camera_visa45.txt";
 
 	setlocale(LC_ALL, "");
 
@@ -200,7 +200,7 @@ int main( int argc, char** argv )
 		virtualRobot->setJointPos(joints);
 
 		PathPlanner * pathPlanner = new PathPlanner();
-		pathPlanner->setCircleRadius(0.1);
+		pathPlanner->setCircleRadius(0.15);
 
 		cv::Mat plot2d = Mat::zeros( 640, 480, CV_8UC3 );
 
@@ -323,7 +323,7 @@ int main( int argc, char** argv )
 				pathPlanner->projectClosePointsOnPlane3D();
 				pathPlanner->project3DPointsto2D();
 
-				double lambda = 0.0005;
+				double lambda = 0.00001;
 				double F = lambda * pathPlanner->getRepulsiveForceZ();
 
 				adapter->getJointPos(joints);
@@ -333,7 +333,7 @@ int main( int argc, char** argv )
 				double beta = sigmoid(10,2*F);
 				std::cout << "beta: " << beta << std::endl;
 				Eigen::Vector3d v1, v2;
-				v1 << 0.0004,0.0004,0.0005;
+				v1 << 0.0004,0.0004,0.0006;
 
 				double l1 = virtualRobot->getSegmentLength(0);
 				double l2 = virtualRobot->getSegmentLength(1);
@@ -342,8 +342,8 @@ int main( int argc, char** argv )
 				v2 = getRotationTaskVels(l1,l2,l3,k2,F);
 
 				if (beta > 0.7) beta = 1;
-				if (beta < 0.3) beta = 0.3;
-				auto v = beta*v1 + 0.000008 * (1-beta)*v2;
+				if (beta < 0.5) beta = 0.5;
+				auto v = beta*v1 + 0.000004 * (1-beta)*v2;
 
 				adapter->setJointVel({0,0,0,v(0),v(1),v(2)});
 
@@ -353,7 +353,7 @@ int main( int argc, char** argv )
 				//--------------- Additional plots -----------------------------
 
 				const auto & closePointsProjections = pathPlanner->getClosePointsProjectedOnPlane2D();
-				const auto & endEffectorPoint       = pathPlanner->getDesiredPoint2D();
+				const auto & endEffectorPoint       = pathPlanner->getExplorePoint2D();
 
 				std::cout << "Number of points close to plane : " << closePointsProjections.cols() << std::endl;
 				std::cout << "End-effector des pos: (" << endEffectorPoint.x() << ";" << endEffectorPoint.y() << ")"<< std::endl;
