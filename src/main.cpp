@@ -333,7 +333,7 @@ int main( int argc, char** argv )
 				double beta = sigmoid(10,2*F);
 				std::cout << "beta: " << beta << std::endl;
 				Eigen::Vector3d v1, v2;
-				v1 << 0.0004,0.0004,0.0006;
+				v1 << 0.0000,0.0000,0.0006;
 
 				double l1 = virtualRobot->getSegmentLength(0);
 				double l2 = virtualRobot->getSegmentLength(1);
